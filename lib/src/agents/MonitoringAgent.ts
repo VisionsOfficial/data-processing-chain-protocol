@@ -4,9 +4,10 @@ import {
   ReportingMessage,
   ReportingPayload,
 } from '../types/types';
-import { Logger } from '../extra/Logger';
+import { Logger } from '../utils/Logger';
 import { Agent } from './Agent';
 import { ReportingAgentBase } from './ReportingAgent';
+
 /**
  * Class for a node monitoring and status reporting agent
  */
@@ -26,10 +27,20 @@ export class ReportingAgent extends ReportingAgentBase {
   }
 }
 
-interface ChainStatus {
+export interface MonitoringChainStatus {
   [key: string]: {
     [key: string]: boolean;
   };
+}
+export interface WorkflowNode {
+  status?: MonitoringChainStatus;
+  setupCount?: number;
+  setupCompleted?: boolean;
+  deployed?: boolean;
+}
+
+export interface Workflow {
+  [key: string]: WorkflowNode;
 }
 
 /**
@@ -40,21 +51,26 @@ export class MonitoringAgent extends Agent {
   private reportingCallback: ReportingCallback;
   private broadcastReportingCallback: ReportingCallback;
   private remoteMonitoringHost: Map<string, string>;
-  // Todo: merge the following
-  private status: Map<string, ChainStatus>;
-  private setupCounts: Map<string, number>;
+  private workflow: Workflow;
 
   /**
    * Creates a new MonitoringAgent instance
    */
   constructor() {
     super();
-    this.status = new Map();
-    this.setupCounts = new Map();
+    this.workflow = {};
     this.remoteMonitoringHost = new Map();
     this.reportingCallback = DefaultCallback.REPORTING_CALLBACK;
     this.broadcastReportingCallback =
       DefaultCallback.BROADCAST_REPORTING_CALLBACK;
+  }
+
+  /**
+   * Retrieves the current workflow object
+   * @returns {Workflow} The current workflow object
+   */
+  getWorkflow(): Workflow {
+    return this.workflow;
   }
 
   /**
@@ -115,26 +131,49 @@ export class MonitoringAgent extends Agent {
     const { chainId, nodeId, index } = payload;
     ReportingAgent.authorize(this);
     const reporting = new ReportingAgent(chainId, nodeId);
-    //
+    // Handle global-signal
+    // This is the main process for redirecting signals and communicating with the
+    // entire context. It is called after any global notification
+    // todo: add type for signals
     reporting.on('global-signal', async (signal) => {
-      Logger.info(`Receive global-signal: ${signal} for node ${nodeId}`);
+      Logger.event(
+        'Receive global-signal:\n' +
+          `\t\t\t\t${JSON.stringify(signal)}\n` +
+          `\t\t\t\tfor node ${nodeId}\n`,
+      );
       const message: ReportingMessage = { ...payload, signal };
       if (index > 0) {
+        // Report message to distant monitoring host
+        signal.broadcasted = true;
         void this.broadcastReportingCallback(message);
       } else {
+        // Report message to monitoring
         await this.reportingCallback(message);
       }
     });
-    //
+
+    // handle local signal for a specific node on a specific chain
     reporting.on('local-signal', async (signal) => {
-      Logger.info(`Receive local-signal: ${signal} for node ${nodeId}`);
+      Logger.event(
+        'Receive local-signal:\n' +
+          `\t\t\t\t${JSON.stringify(signal)}\n` +
+          `\t\t\t\tfor node ${nodeId} in chain ${chainId}\n`,
+      );
       const message: ReportingMessage = { ...payload, signal };
-      const update: ChainStatus = {
-        [message.nodeId]: { [message.signal]: true },
+      const update: MonitoringChainStatus = {
+        [message.nodeId]: { [message.signal.status]: true },
       };
-      let prev = this.status.get(message.chainId) ?? {};
+      if (!this.workflow[message.chainId]) {
+        this.workflow[message.chainId] = {};
+      }
+      const prev = this.workflow[message.chainId].status || {};
       const next = { ...prev, ...update };
-      this.status.set(message.chainId, next);
+      this.workflow[message.chainId].status = next;
+
+      if (nodeId === 'supervisor') {
+        // Report message to monitoring
+        await this.reportingCallback(message);
+      }
     });
     return reporting;
   }
@@ -144,15 +183,68 @@ export class MonitoringAgent extends Agent {
    * @param {string} chainId - The chain identifier
    * @returns {ChainStatus|undefined} The chain status if exists
    */
-  getChainStatus(chainId: string): ChainStatus | undefined {
-    return this.status.get(chainId);
+  getChainStatus(chainId: string): MonitoringChainStatus | undefined {
+    return this.workflow[chainId]?.status;
   }
 
-  getChainSetupCount(chainId: string): number | undefined {
-    return this.setupCounts.get(chainId);
-  }
-
+  /**
+   * Sets the setup count for a specific chain
+   * @param {string} chainId - The chain identifier
+   * @param {number} count - The setup count to be set
+   */
   setChainSetupCount(chainId: string, count: number): void {
-    this.setupCounts.set(chainId, count);
+    if (!this.workflow[chainId]) {
+      this.workflow[chainId] = {};
+    }
+    this.workflow[chainId].setupCount = count;
+  }
+
+  /**
+   * Retrieves the setup count for a specific chain
+   * @param {string} chainId - The chain identifier
+   * @returns {number|undefined} The setup count if exists
+   */
+  getChainSetupCount(chainId: string): number | undefined {
+    return this.workflow[chainId]?.setupCount;
+  }
+
+  /**
+   * Marks a chain as deployed
+   * @param {string} chainId - The chain identifier
+   */
+  setChainDeployed(chainId: string): void {
+    if (!this.workflow[chainId]) {
+      this.workflow[chainId] = {};
+    }
+    this.workflow[chainId].deployed = true;
+  }
+
+  /**
+   * Checks if a chain is deployed
+   * @param {string} chainId - The chain identifier
+   * @returns {boolean|undefined} Whether the chain is deployed
+   */
+  getChainDeployed(chainId: string): boolean | undefined {
+    return this.workflow[chainId]?.deployed;
+  }
+
+  /**
+   * Marks a chain setup as completed
+   * @param {string} chainId - The chain identifier
+   */
+  setChainSetupCompleted(chainId: string): void {
+    if (!this.workflow[chainId]) {
+      this.workflow[chainId] = {};
+    }
+    this.workflow[chainId].setupCompleted = true;
+  }
+
+  /**
+   * Checks if a chain setup is completed
+   * @param {string} chainId - The chain identifier
+   * @returns {boolean|undefined} Whether the chain setup is completed
+   */
+  getChainSetupCompleted(chainId: string): boolean | undefined {
+    return this.workflow[chainId]?.setupCompleted;
   }
 }

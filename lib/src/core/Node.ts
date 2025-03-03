@@ -9,12 +9,14 @@ import {
   ChainType,
   PipelineMeta,
   ReportingSignalType,
+  Notification,
 } from '../types/types';
-import { setTimeout, setImmediate } from 'timers';
+import { setImmediate } from 'timers';
 import { randomUUID } from 'node:crypto';
-import { Logger } from '../extra/Logger';
+import { Logger } from '../utils/Logger';
 import { NodeSupervisor } from './NodeSupervisor';
 import { MonitoringAgent, ReportingAgent } from '../agents/MonitoringAgent';
+import { NodeStatusManager } from './NodeStatusManager';
 
 /**
  * Represents a single executable node within a chain
@@ -22,10 +24,9 @@ import { MonitoringAgent, ReportingAgent } from '../agents/MonitoringAgent';
 export class Node {
   private id: string;
   private pipelines: ProcessorPipeline[];
-  private dependencies: string[]; // Todo
+  private dependencies: string[];
   private status: ChainStatus.Type;
   private error?: Error;
-  private delay: number;
   private progress: number;
   private dataType: DataType.Type;
   private executionQueue: Promise<void>;
@@ -37,6 +38,7 @@ export class Node {
   } | null;
   private config: NodeConfig | null;
   private reporting: ReportingAgent | null = null;
+  private statusManager: NodeStatusManager;
 
   /**
    * Creates a new Node instance
@@ -48,12 +50,12 @@ export class Node {
     this.pipelines = [];
     this.dependencies = dependencies;
     this.status = ChainStatus.NODE_PENDING;
-    this.delay = 0;
     this.progress = 0;
     this.dataType = DataType.RAW;
     this.executionQueue = Promise.resolve();
     this.nextNodeInfo = null;
     this.config = null;
+    this.statusManager = new NodeStatusManager(this);
   }
 
   /**
@@ -82,6 +84,15 @@ export class Node {
       Logger.warn('Node index is not defined, configuration failed');
     }
     this.config = config;
+    if (config.signalQueue) {
+      Logger.info(`Node ${this.id} enqueuing signals...`);
+      Logger.debug(`${config.signalQueue}`);
+      void this.statusManager.enqueueSignals(config.signalQueue);
+    }
+  }
+
+  async enqueueSignals(statusQueue: NodeSignal.Type[]): Promise<void> {
+    await this.statusManager.enqueueSignals(statusQueue);
   }
 
   /**
@@ -134,6 +145,13 @@ export class Node {
     return result;
   }
 
+  /**
+   * Generates pipeline batches of a specified size
+   * @param {ProcessorPipeline[]} pipelines - Array of processor pipelines
+   * @param {number} count - Number of pipelines per batch
+   * @returns {Generator<ProcessorPipeline[], void, unknown>} Generator yielding pipeline batches
+   * @private
+   */
   private *getPipelineGenerator(
     pipelines: ProcessorPipeline[],
     count: number,
@@ -148,12 +166,16 @@ export class Node {
    * @param {ChainStatus.Type} notify - Node status to report
    */
   notify(
-    notify: ChainStatus.Type,
+    notification: ChainStatus.Type | Notification,
     type: ReportingSignalType = 'local-signal',
   ): void {
     try {
       if (this.reporting !== null) {
-        this.reporting.notify(notify, type);
+        if (typeof notification === 'object' && 'status' in notification) {
+          this.reporting.notify(notification, type);
+        } else {
+          this.reporting.notify({ status: notification }, type);
+        }
       } else {
         throw new Error('Reporter not set');
       }
@@ -163,47 +185,96 @@ export class Node {
   }
 
   /**
+   * Processes child chains if configured
+   * @param {PipelineData} data - Data to be processed by the child chain
+   * @returns {Promise<void>}
+   * @private
+   */
+  private async processChildChain(data: PipelineData): Promise<void> {
+    const childConfig = this.config?.chainConfig;
+
+    if (childConfig && Array.isArray(childConfig) && childConfig.length > 0) {
+      childConfig[0].rootConfig = this.config
+        ? JSON.parse(JSON.stringify(this.config))
+        : undefined;
+      const supervisor = NodeSupervisor.retrieveService();
+      const chainId = await supervisor.handleRequest({
+        signal: NodeSignal.CHAIN_DEPLOY,
+        config: childConfig,
+        data,
+      });
+
+      if (!chainId) {
+        throw new Error('Failed to deploy chain: no chainId returned');
+      }
+    }
+  }
+
+  /**
    * Executes node processing on input data
    * @param {PipelineData} data - Data to process
    * @returns {Promise<void>}
    */
   async execute(data: PipelineData): Promise<void> {
+    const childMode =
+      this.config?.rootConfig?.childMode === 'parallel'
+        ? 'in parallel'
+        : 'in serial';
+    const suspendedState = this.statusManager.getSuspendedState();
+    const isResuming = !!suspendedState;
+
+    Logger.info(
+      `Node ${this.id} execution ${isResuming ? 'resumed' : 'started'} ${childMode}...`,
+    );
+
     this.executionQueue = this.executionQueue.then(async () => {
       try {
         this.updateStatus(ChainStatus.NODE_IN_PROGRESS);
-        // todo: monitor this step
-        if (this.delay > 0) {
-          await this.sleep(this.delay);
+        let generator: Generator<ProcessorPipeline[], void, unknown>;
+        let processingData = data;
+
+        if (isResuming && suspendedState) {
+          generator = suspendedState.generator as Generator<
+            ProcessorPipeline[],
+            void,
+            unknown
+          >;
+          processingData = suspendedState.data;
+          await this.processBatch(suspendedState.currentBatch, processingData);
+        } else {
+          generator = this.getPipelineGenerator(this.pipelines, 3);
         }
 
-        const generator = this.getPipelineGenerator(this.pipelines, 3);
+        let nextResult = isResuming ? generator.next() : generator.next();
 
-        for (const pipelineBatch of generator) {
-          await new Promise<void>((resolve, reject) => {
-            setImmediate(async () => {
-              try {
-                const batchPromises = pipelineBatch.map((pipeline) =>
-                  this.processPipeline(pipeline, data).then(
-                    (pipelineData: PipelineData) => {
-                      this.output.push(pipelineData);
-                      this.updateProgress();
-                      // todo: monitor this step
-                    },
-                  ),
-                );
-                await Promise.all(batchPromises);
-                resolve();
-              } catch (error) {
-                reject(error);
-              }
-            });
-          });
+        while (!nextResult.done) {
+          const status = await this.statusManager.process();
+          if (status.includes(ChainStatus.NODE_SUSPENDED)) {
+            this.statusManager.suspendExecution(
+              generator,
+              nextResult.value,
+              processingData,
+            );
+            return;
+          }
+
+          await this.processBatch(nextResult.value, processingData);
+          nextResult = generator.next();
         }
 
+        this.statusManager.clearSuspendedState();
         this.updateStatus(ChainStatus.NODE_COMPLETED);
+
+        if (this.config?.chainConfig) {
+          Logger.info(`child chain found in node: ${this.id}`);
+          await this.processChildChain(processingData);
+        }
       } catch (error) {
-        this.updateStatus(ChainStatus.NODE_FAILED, error as Error);
-        Logger.error(`Node ${this.id} execution failed: ${error}`);
+        if (!this.statusManager.isSuspended()) {
+          this.statusManager.clearSuspendedState();
+          this.updateStatus(ChainStatus.NODE_FAILED, error as Error);
+          Logger.error(`Node ${this.id} execution failed: ${error}`);
+        }
       }
     });
 
@@ -211,6 +282,37 @@ export class Node {
     await supervisor.handleRequest({
       signal: NodeSignal.NODE_SEND_DATA,
       id: this.id,
+    });
+  }
+
+  /**
+   * Processes a batch of processor pipelines asynchronously
+   * @param {ProcessorPipeline[]} pipelineBatch - Array of processor pipelines to process
+   * @param {PipelineData} data - Data to be processed
+   * @returns {Promise<void>}
+   * @private
+   */
+  private async processBatch(
+    pipelineBatch: ProcessorPipeline[],
+    data: PipelineData,
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      setImmediate(async () => {
+        try {
+          const batchPromises = pipelineBatch.map((pipeline) =>
+            this.processPipeline(pipeline, data).then(
+              (pipelineData: PipelineData) => {
+                this.output.push(pipelineData);
+                this.updateProgress();
+              },
+            ),
+          );
+          await Promise.all(batchPromises);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
     });
   }
 
@@ -226,15 +328,15 @@ export class Node {
   }
 
   /**
-   * Terminates node execution and handles final data
+   * Terminates node execution and handles final processed data
    * @param {string} nodeId - Node identifier
    * @param {PipelineData[]} pipelineData - Array of processed data
    * @private
    * @static
    */
   private static async terminate(nodeId: string, pipelineData: PipelineData[]) {
-    // todo: format data
-    const data = pipelineData[0]; // tmp
+    Logger.special(`Terminate: Node ${nodeId} execution completed.`);
+    const data = pipelineData[0];
     await Node.moveToNextNode(nodeId, data);
   }
 
@@ -253,6 +355,7 @@ export class Node {
     const supervisor = NodeSupervisor.retrieveService();
     const nodes = supervisor.getNodes();
     const currentNode = nodes.get(nodeId);
+    const chainId = currentNode?.getConfig()?.chainId;
     if (!currentNode) {
       Logger.warn(`Node ${nodeId} not found for moving to next node.`);
       return;
@@ -268,23 +371,31 @@ export class Node {
       } else if (nextNodeInfo.type === NodeType.REMOTE) {
         supervisor.remoteServiceCallback({
           // targetId and meta are related to the next remote target service uid
-          chainId: currentNode.getConfig()?.chainId,
+          chainId,
           targetId: nextNodeInfo.id,
           data: pipelineData,
           meta: nextNodeInfo.meta,
         });
       }
     } else {
-      Logger.info(`End of pipeline reached by node ${nodeId}.`);
-      // currentNode.reporting.notify();
+      Logger.special(
+        `End of pipeline reached by node ${nodeId} in chain ${chainId}.`,
+      );
+      currentNode.notify(ChainStatus.NODE_END_OF_PIPELINE, 'global-signal');
     }
     const isPersistant =
       (currentNode.config?.chainType ?? 0) & ChainType.PERSISTANT;
     if (!isPersistant) {
-      await supervisor.handleRequest({
-        id: nodeId,
-        signal: NodeSignal.NODE_DELETE,
-      });
+      const autoDelete =
+        (currentNode.config?.chainType ?? 0) & ChainType.AUTO_DELETE;
+      if (autoDelete) {
+        await supervisor.handleRequest({
+          id: nodeId,
+          signal: NodeSignal.NODE_DELETE,
+        });
+      } else {
+        currentNode.notify(ChainStatus.NODE_PENDING_DELETION, 'global-signal');
+      }
     } else {
       Logger.warn(`Node ${nodeId} kept for future calls.`);
     }
@@ -305,18 +416,6 @@ export class Node {
    */
   canExecute(executedNodes: Set<string>): boolean {
     return this.dependencies.every((dep) => executedNodes.has(dep));
-  }
-
-  /**
-   * Sets execution delay in milliseconds
-   * @param {number} delay - Delay amount
-   */
-  setDelay(delay: number): void {
-    this.delay = delay;
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -354,7 +453,7 @@ export class Node {
       this.error = error;
     }
     if (this.reporting) {
-      this.reporting.notify(status);
+      this.reporting.notify({ status });
     }
   }
 

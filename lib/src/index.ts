@@ -1,8 +1,12 @@
 import { NodeSupervisor } from './core/NodeSupervisor';
 import { PipelineProcessor } from './core/PipelineProcessor';
 
-export { NodeSupervisor };
+import * as MonitoringModule from './extensions/DefaultMonitoringSignalHandler';
+import * as ReportingModule from './extensions/DefaultReportingCallbacks';
+import * as ResolverModule from './extensions/DefaultResolverCallbacks';
+import * as NodeStatusModule from './extensions/DefaultNodeStatusBroadcaster';
 
+export { NodeSupervisor };
 export { PipelineProcessor };
 
 export {
@@ -20,13 +24,10 @@ export {
   NodeConfig,
   NodeType,
   ProcessorCallback,
-  CombineStrategy,
   CombineFonction,
   SupervisorPayloadSetup,
   SupervisorPayloadCreate,
   SupervisorPayloadDelete,
-  SupervisorPayloadPause,
-  SupervisorPayloadDelay,
   SupervisorPayloadRun,
   SupervisorPayloadSendData,
   SupervisorPayloadPrepareChain,
@@ -41,17 +42,14 @@ export {
   ServiceConfig,
 } from './types/types';
 
-export { PipelineDataCombiner } from './core/PipelineDataCombiner';
-
-export {
-  broadcastSetupCallback,
-  BSCPayload,
-  remoteServiceCallback,
-  RSCPayload,
-  setResolverCallbacks,
-} from './extra/DefaultResolverCallbacks';
-
-export {
-  BRCPayload,
-  setMonitoringCallbacks,
-} from './extra/DefaultReportingCallbacks';
+export namespace Ext {
+  export type BRCPayload = ReportingModule.Ext.BRCPayload;
+  export type MCPayload = ReportingModule.Ext.MCPayload;
+  export type BSCPayload = ResolverModule.Ext.BSCPayload;
+  export type RSCPayload = ResolverModule.Ext.RSCPayload;
+  export type NSCPayload = NodeStatusModule.Ext.NSCPayload;
+  export const Monitoring: typeof MonitoringModule.Ext = MonitoringModule.Ext;
+  export const Reporting: typeof ReportingModule.Ext = ReportingModule.Ext;
+  export const Resolver: typeof ResolverModule.Ext = ResolverModule.Ext;
+  export const NodeStatus: typeof NodeStatusModule.Ext = NodeStatusModule.Ext;
+}

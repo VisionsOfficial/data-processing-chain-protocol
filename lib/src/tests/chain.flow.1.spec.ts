@@ -82,6 +82,7 @@ describe('Virtual Connector Chain Execution', function () {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const chainState = monitoring.getChainStatus(chainId);
+
     expect(chainState, 'expect 1').to.not.be.undefined;
     if (chainState) {
       const completedNodes = Object.keys(chainState).filter(
