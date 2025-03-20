@@ -12,7 +12,7 @@ graph LR
 
 ## Infrastructure Services
 
-A data processing service, as it acts as a data consumer and data provider, can be defined in a specific Service Offering that would be tagged as an “Infrastructure Service” and provide a Service Resource (for Input) & a Data Resource (for output). This is then represented as an Infrastructure Service-Tagged Service Offering.
+A data processing service, as it acts as a data consumer and data provider, can be defined in a specific Service Offering that would be tagged as an "Infrastructure Service" and provide a Service Resource (for Input) & a Data Resource (for output). This is then represented as an Infrastructure Service-Tagged Service Offering.
 
 An instance of a service needs to reference a Participant for the system to be aware of what participant is providing such service and which dataspace connector is going to be used by this data processing node whenever called by the data processing chain.
 
@@ -286,6 +286,8 @@ Additionally, as mentioned earlier the nodes accept JSON input to provide supple
 
 The testing strategy will focus on ensuring the correctness, reliability, and performance of its functionalities. We will employ a combination of unit tests, integration tests, and possibly UI tests where relevant. The testing environment will replicate production-like conditions to validate the agent's behavior accurately. Acceptance criteria will be defined based on user stories, functional requirements, and performance benchmarks.
 
+![Test specification](./img.png)
+
 ### Internal unit tests
 
 For unit testing, we will utilize the Mocha testing framework along with Chai for assertions. The test cases will cover individual components as contract profile management, catalog integration, communication interface, the data exchange proposals and the connector. Mocking frameworks like Sinon may be used to isolate dependencies and simulate external interactions.
@@ -293,7 +295,3 @@ For unit testing, we will utilize the Mocha testing framework along with Chai fo
 ### Component-level testing
 
 We will use tools such as Postman for API testing to verify communication interfaces and data exchange protocols. Additionally, integration tests will ensure seamless integration within the connector. Continuous Integration (CI) pipelines will be set up to automate the execution of integration tests.
-
-### UI test (where relevant)
-
-Testing frameworks like Cypress will be used to automate UI interactions and validate the usability and functionality of the user interface. UI tests will cover scenarios such as creating and updating a chain.

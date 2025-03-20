@@ -6,10 +6,13 @@ import {
   SupervisorPayloadSetup,
   PipelineMeta,
   Ext,
+  ChainStatus,
 } from 'dpcp-library';
 import { CallbackPayload, NodeSignal, PipelineData } from 'dpcp-library';
 import { Logger } from './libs/Logger';
 import http from 'http';
+import { URL } from 'url';
+import { compareURLs } from './libs/utils';
 
 dotenv.config({ path: '.connector.env' });
 
@@ -29,6 +32,21 @@ class SupervisorContainer {
       await SupervisorContainer.instance.setup();
     }
     return SupervisorContainer.instance;
+  }
+
+  private notify(data: any): void {
+    const { chainId, signal: notification } = data;
+    Logger.header({ message: 'Connector - Notification:' });
+    Logger.info({
+      message: `Chain: ${chainId}, Signal: ${JSON.stringify(notification)}\n`,
+    });
+    //
+    this.nodeSupervisor.log('chains');
+    Logger.header({ message: '====================================' });
+    this.nodeSupervisor.log('monitoring-workflow');
+    Logger.header({ message: '====================================' });
+    //
+    this.nodeSupervisor.handleNotification(chainId, notification);
   }
 
   public async createAndStartChain(req: Request, res: Response): Promise<void> {
@@ -52,14 +70,64 @@ class SupervisorContainer {
     }
   }
 
+  private async processNodeSignal(
+    req: Request,
+    res: Response,
+    signal: NodeSignal.Type,
+    localMessage: string,
+    remoteMessage: string,
+  ): Promise<void> {
+    const { hostURI, targetId, chainId } = req.body;
+
+    if (!hostURI || hostURI === 'local') {
+      const nodes = this.nodeSupervisor.getNodesByServiceAndChain(
+        targetId,
+        chainId,
+      );
+      const nodeId = nodes[0]?.getId();
+      await this.nodeSupervisor.enqueueSignals(nodeId, [signal]);
+      res.status(200).json({ message: localMessage });
+    } else if (hostURI && hostURI !== 'local') {
+      this.nodeSupervisor.remoteReport(
+        {
+          status: ChainStatus.CHAIN_NOTIFIED,
+          signal: signal,
+          payload: { targetId, hostURI },
+        },
+        chainId,
+      );
+      res.status(200).json({ message: remoteMessage });
+    } else {
+      res.status(400).json({ error: 'Invalid hostURI' });
+    }
+  }
+
+  public async resumeNode(req: Request, res: Response): Promise<void> {
+    await this.processNodeSignal(
+      req,
+      res,
+      NodeSignal.NODE_RESUME,
+      `Enqueue local 'resume' status`,
+      `'Enqueue remote 'resume' status`,
+    );
+  }
+
+  public async suspendNode(req: Request, res: Response): Promise<void> {
+    await this.processNodeSignal(
+      req,
+      res,
+      NodeSignal.NODE_SUSPEND,
+      `Enqueue local 'suspend' status`,
+      `Enqueue remote 'suspend' status`,
+    );
+  }
+
   public async communicateNode(req: Request, res: Response): Promise<void> {
     const communicationType = req.params.type;
     try {
       switch (communicationType) {
         case 'setup': {
           const { chainId, remoteConfigs } = req.body;
-
-          // The following simulates a process that takes time to complete
           const resolver = remoteConfigs?.services[0]?.meta?.resolver;
           if (resolver) {
             Logger.warn({
@@ -85,11 +153,29 @@ class SupervisorContainer {
             .json({ message: 'Data received and processed successfully' });
           break;
         case 'notify': {
-          const { chainId, signal } = req.body;
-          this.nodeSupervisor.handleNotification(chainId, signal);
+          // Handle Notifications distant Monitorings
+          this.notify(req.body);
           res.status(200).json({
             message: 'Notify the signal to the supervisor monitoring',
           });
+          break;
+        }
+
+        case 'enqueue-status': {
+          Logger.info({
+            message: `Enqueue status: ${JSON.stringify(req.body)}`,
+          });
+          const { targetId } = req.body.payload;
+          const { chainId, signal } = req.body;
+          req.body = { targetId, chainId };
+          switch (signal) {
+            case NodeSignal.NODE_RESUME:
+              await this.resumeNode(req, res);
+              break;
+            case NodeSignal.NODE_SUSPEND:
+              await this.suspendNode(req, res);
+              break;
+          }
           break;
         }
         default:
@@ -108,9 +194,6 @@ class SupervisorContainer {
   public async setup(): Promise<void> {
     PipelineProcessor.setCallbackService(
       async ({ targetId, data, meta }): Promise<PipelineData> => {
-        //
-        // Here we call the required service
-        //
         Logger.info({
           message: `PipelineProcessor callback invoked:
                       - Connector: ${this.uid}
@@ -124,6 +207,7 @@ class SupervisorContainer {
     );
 
     await Ext.Resolver.setResolverCallbacks({
+      // automatically setup the following rest post methods
       paths: {
         setup: '/node/communicate/setup',
         run: '/node/communicate/run',
@@ -145,6 +229,10 @@ class SupervisorContainer {
       paths: {
         notify: '/node/communicate/notify',
       },
+    });
+
+    await Ext.NodeStatus.setNodeStatusResolverCallbacks({
+      paths: { enqueue: '/node/communicate/enqueue-status' },
     });
 
     try {
@@ -186,6 +274,14 @@ export class LiteConnector {
       this.app.post(
         '/node/communicate/:type',
         this.container.communicateNode.bind(this.container),
+      );
+      this.app.post(
+        '/node/resume',
+        this.container.resumeNode.bind(this.container),
+      );
+      this.app.post(
+        '/node/suspend',
+        this.container.suspendNode.bind(this.container),
       );
     }
   }
