@@ -5,3 +5,4 @@ logs
 src/logs
 .npmrc
 mochawesome-report
+html-doc
