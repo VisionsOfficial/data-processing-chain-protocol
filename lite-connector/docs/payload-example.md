@@ -1,16 +1,26 @@
-# LiteConnector Example Usage via a Single Endpoint in One Step
+# LiteConnector Documentation
 
-### Start the connectors
+### Starting the Connectors
+
+```
+node ./launch-connectors.js
+```
+
+or
 
 ```
 ./launch-connectors.sh
 ```
- 
-### **Endpoint to create the chain across all connectors**
 
-**POST**: `http://localhost:8887/chain/create-and-start`
+### Create and Start a Chain
 
-**Payload Example 1, with meta data, resolver and configuration*:
+**Endpoint:** `POST http://localhost:8887/chain/create-and-start`
+
+This endpoint allows you to configure and start a chain in a single request.
+
+#### Payload Examples
+
+**Example 1: With metadata, resolver, and configuration**
 
 ```json
 {
@@ -31,7 +41,7 @@
 }
 ```
 
-**Payload Example 2, with meta data and resolver**:
+**Example 2: With metadata and resolver for multiple services**
 
 ```json
 {
@@ -81,7 +91,7 @@
 }
 ```
 
-**Payload Example 3, with meta data**:
+**Example 3: With metadata for some services**
 
 ```json
 {
@@ -118,13 +128,12 @@
     }
   ],
   "data": {
-    "hello": "here an other data"
+    "hello": "here another data"
   }
 }
-
 ```
 
-**Payload example 4**:
+**Example 4: Simple configuration with direct service URLs**
 
 ```json
 {
@@ -155,21 +164,87 @@
 
 ---
 
-# LiteConnector.0 Example Usage in 3 Steps
+## Using Signal Status
 
-### Start the connectors
+### Start Connectors with Signal Type
+
+```
+node ./launch-connectors.js --type 1
+```
+or 
+
+```
+./launch-connectors.sh --type 1
+```
+
+### Deploy and Start Chain with a Suspended Node
+
+**Endpoint:** `POST http://localhost:8887/chain/create-and-start`
+
+```json
+{
+  "chainConfig": [
+    {
+      "services": [],
+      "location": "local",
+      "monitoringHost": "http://localhost:8887/"
+    },
+    {
+      "services": ["http://localhost:8888/service1"],
+      "signalQueue": ["node_suspend"],
+      "location": "remote"
+    }
+  ],
+  "data": {
+      "hello": "here the data"
+   }
+}
+```
+
+### Resume Remote Node from Deployment Host
+
+**Endpoint:** `POST http://localhost:8887/node/resume`
+
+```json
+{
+    "hostURI": "http://localhost:8888/",
+    "chainId": "chain-id-returned-by-previous-request",
+    "targetId": "http://localhost:8888/service1"
+}
+```
+
+### Resume Local Node from Service Host
+
+**Endpoint:** `POST http://localhost:8888/node/resume`
+
+```json
+{
+    "chainId": "chain-id-returned-by-previous-request",
+    "targetId": "http://localhost:8888/service1"
+}
+```
+
+Note: The same approach can be used with `POST http://localhost:8888/node/suspend`
+
+---
+
+## Legacy Example (LiteConnector.0)
+
+### Start Legacy Connectors
+
+```
+node ./launch-connectors.js --type 0
+```
+
+or
 
 ```
 ./launch-connectors.sh --type 0
 ```
 
-### Step A: **Specific Endpoint for This Connector**
+### Step 1: Configure Service-Connector Mappings
 
-This endpoint allows dispatching the `targetUID` and `connectorURI` relations to all connectors running on localhost.
-
-**POST**: `http://localhost:8887/dispatch-config`
-
-**Payload**:
+**Endpoint:** `POST http://localhost:8887/dispatch-config`
 
 ```json
 [
@@ -188,13 +263,9 @@ This endpoint allows dispatching the `targetUID` and `connectorURI` relations to
 ]
 ```
 
----
+### Step 2: Create the Chain
 
-### Step B: **Endpoint to create the chain across all connectors**
-
-**POST**: `http://localhost:8887/chain/create`
-
-**Payload** (basically, this is the chain):
+**Endpoint:** `POST http://localhost:8887/chain/create`
 
 ```json
 {
@@ -220,7 +291,7 @@ This endpoint allows dispatching the `targetUID` and `connectorURI` relations to
 }
 ```
 
-### Example of return:
+**Example Response:**
 
 ```json
 {
@@ -228,13 +299,9 @@ This endpoint allows dispatching the `targetUID` and `connectorURI` relations to
 }
 ```
 
----
+### Step 3: Start the Chain
 
-### Step C: **Endpoint to start the chain**
-
-**PUT**: `http://localhost:8887/chain/start`
-
-**Payload** (the ID of the chain to execute and the input data):
+**Endpoint:** `PUT http://localhost:8887/chain/start`
 
 ```json
 {

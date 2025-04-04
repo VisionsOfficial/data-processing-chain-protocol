@@ -1,27 +1,36 @@
 import { Node } from './Node';
 import {
-  ServiceCallback,
-  NodeSignal,
-  ChainStatus,
-  PipelineData,
-  SupervisorPayload,
+  BroadcastPreMessage,
+  BroadcastReportingCallback,
+  BroadcastSetupMessage,
   CallbackPayload,
-  BrodcastSetupMessage,
   ChainConfig,
   ChainRelation,
-  NodeConfig,
-  NodeType,
-  SetupCallback,
-  ServiceConfig,
+  ChainStatus,
+  ChildMode,
   DefaultCallback,
+  NodeConfig,
+  NodeSignal,
+  NodeStatusCallback,
+  NodeStatusMessage,
+  NodeType,
+  Notification,
+  PipelineData,
+  PreCallback,
   ReportingCallback,
-  BroadcastReportingCallback,
   ReportingSignalType,
+  ResumePayload,
+  ServiceCallback,
+  ServiceConfig,
+  SetupCallback,
+  SupervisorPayload,
 } from '../types/types';
-import { Logger } from '../extra/Logger';
+import { Logger } from '../utils/Logger';
 import { PipelineProcessor } from './PipelineProcessor';
 import { randomUUID } from 'node:crypto';
 import { MonitoringAgent } from '../agents/MonitoringAgent';
+
+// import { NodeSupervisorLogger } from './NodeSupervisorLogger';
 
 /**
  * Manages the lifecycle and distribution of nodes within a processing chain
@@ -30,10 +39,13 @@ export class NodeSupervisor {
   private uid: string;
   private ctn: string;
   private static instance: NodeSupervisor;
-  private nodes: Map<string, Node>;
-  private chains: Map<string, ChainRelation>;
-
+  // private nsLogger: NodeSupervisorLogger;
+  private nodes: Map<string, Node>; // local nodes
+  private chains: Map<string, ChainRelation>; // local chains
+  private childChains: Map<string, string[]>; // map children to parents
   private broadcastSetupCallback: SetupCallback;
+  private broadcastPreCallback: PreCallback;
+  nodeStatusCallback: NodeStatusCallback;
   remoteServiceCallback: ServiceCallback;
 
   /**
@@ -43,10 +55,14 @@ export class NodeSupervisor {
   private constructor() {
     this.uid = '@supervisor:default';
     this.ctn = '@container:default';
+    // this.nsLogger = new NodeSupervisorLogger();
     this.nodes = new Map();
     this.chains = new Map();
+    this.childChains = new Map();
     this.remoteServiceCallback = DefaultCallback.SERVICE_CALLBACK;
     this.broadcastSetupCallback = DefaultCallback.SETUP_CALLBACK;
+    this.broadcastPreCallback = DefaultCallback.PRE_CALLBACK;
+    this.nodeStatusCallback = DefaultCallback.NODE_STATUS_CALLBACK;
   }
 
   /**
@@ -55,6 +71,7 @@ export class NodeSupervisor {
    * @returns {NodeSupervisor} The NodeSupervisor instance
    */
   static retrieveService(refresh: boolean = false): NodeSupervisor {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.retrieveService`)
     if (!NodeSupervisor.instance || refresh) {
       const instance = new NodeSupervisor();
       NodeSupervisor.instance = instance;
@@ -63,10 +80,52 @@ export class NodeSupervisor {
   }
 
   /**
+   * Logs information based on the specified type.
+   * @param {string} type - The type of log to generate ('chains' or 'monitoring-workflow`).
+   */
+  log(type: string) {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.log`)
+    switch (type) {
+      case 'chains':
+        // this.nsLogger.logChains(this.chains);
+        break;
+      case 'monitoring-workflow': {
+        const monitoring = MonitoringAgent.retrieveService();
+        const workflow = monitoring.getWorkflow();
+        // this.nsLogger.logWorkflow(workflow);
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }
+
+  /**
+   * Retrieves the chain relation for the given chain ID.
+   * @param {string} chainId - The identifier of the chain.
+   * @returns {ChainRelation | undefined} The chain relation or undefined if not found.
+   */
+  getChain(chainId: string): ChainRelation | undefined {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.getChain`)
+    return this.chains.get(chainId);
+  }
+
+  /**
+   * Sets the callback function for node status updates.
+   * @param {NodeStatusCallback} nodeStatusCallback - The callback to handle node status changes.
+   */
+  setNodeStatusCallback(nodeStatusCallback: NodeStatusCallback): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setNodeStatusCallback`)
+    this.nodeStatusCallback = nodeStatusCallback;
+  }
+
+  /**
    * Sets the remote service callback function
    * @param {ServiceCallback} remoteServiceCallback - The callback to handle remote service calls
    */
   setRemoteServiceCallback(remoteServiceCallback: ServiceCallback): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setRemoteServiceCallback`)
     this.remoteServiceCallback = remoteServiceCallback;
   }
 
@@ -75,7 +134,18 @@ export class NodeSupervisor {
    * @param {SetupCallback} broadcastSetupCallback - The callback to handle broadcast setup signals
    */
   setBroadcastSetupCallback(broadcastSetupCallback: SetupCallback): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setBroadcastSetupCallback`)
     this.broadcastSetupCallback = broadcastSetupCallback;
+  }
+
+  /**
+   * Sets the broadcast setup callback function
+   * @param broadcastDeployCallback
+   */
+  setBroadcastPreCallback(broadcastDeployCallback: PreCallback): PreCallback {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setBroadcastSetupCallback`)
+    this.broadcastPreCallback = broadcastDeployCallback;
+    return this.broadcastPreCallback;
   }
 
   /**
@@ -85,6 +155,7 @@ export class NodeSupervisor {
   setBroadcastReportingCallback(
     broadcastReportingCallback: BroadcastReportingCallback,
   ): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setBroadcastReportingCallback`)
     const monitoring = MonitoringAgent.retrieveService();
     monitoring.setBroadcastReportingCallback(broadcastReportingCallback);
   }
@@ -94,6 +165,7 @@ export class NodeSupervisor {
    * @param {ReportingCallback} reportingCallback - The callback to handle monitoring reports
    */
   setMonitoringCallback(reportingCallback: ReportingCallback): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setMonitoringCallback`)
     const monitoring = MonitoringAgent.retrieveService();
     monitoring.setReportingCallback(reportingCallback);
   }
@@ -103,8 +175,25 @@ export class NodeSupervisor {
    * @param {string} uid - The unique identifier
    */
   setUid(uid: string) {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setUid`)
     this.ctn = `@container:${uid}`;
     this.uid = `@supervisor:${uid}`;
+  }
+
+  /**
+   * Enqueues signals for a specific node to process.
+   * @param {string} nodeId - The identifier of the node.
+   * @param {NodeSignal.Type[]} status - The signals to enqueue.
+   * @param resumePayload
+   * @returns {Promise<void>} A promise that resolves when the signals are enqueued.
+   */
+  async enqueueSignals(
+    nodeId: string,
+    status: NodeSignal.Type[],
+    resumePayload?: ResumePayload,
+  ): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.enqueueSignals`)
+    return this.nodes.get(nodeId)?.enqueueSignals(status, resumePayload);
   }
 
   /**
@@ -113,35 +202,78 @@ export class NodeSupervisor {
    * @returns {Promise<void|string>} Promise resolving to a string if applicable
    */
   async handleRequest(payload: SupervisorPayload): Promise<void | string> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.handleRequest`)
     switch (payload.signal) {
       case NodeSignal.NODE_SETUP:
+        // Logger.event(`handle NODE_SETUP`);
         return await this.setupNode(payload.config);
       case NodeSignal.NODE_CREATE:
+        // Logger.event(`handle NODE_CREATE`);
         return await this.createNode(payload.params);
       case NodeSignal.NODE_DELETE:
+        // Logger.event(`handle NODE_DELETE`);
         return await this.deleteNode(payload.id);
-      case NodeSignal.NODE_PAUSE:
-        return await this.pauseNode(payload.id);
-      case NodeSignal.NODE_DELAY:
-        return await this.delayNode(payload.id, payload.delay);
       case NodeSignal.NODE_RUN:
+        // Logger.event(`handle NODE_RUN`);
         return await this.runNode(payload.id, payload.data);
       case NodeSignal.NODE_SEND_DATA:
+        // Logger.event(`handle NODE_SEND_DATA`);
         return await this.sendNodeData(payload.id);
       case NodeSignal.CHAIN_PREPARE:
+        // Logger.event(`handle CHAIN_PREPARE`);
         return await this.prepareChainDistribution(payload.id);
       case NodeSignal.CHAIN_START:
+        // Logger.event(`handle CHAIN_START`);
         return await this.startChain(payload.id, payload.data);
-      case NodeSignal.CHAIN_START_PENDING:
+      case NodeSignal.CHAIN_START_PENDING_OCCURRENCE:
+        // Logger.event(`handle CHAIN_START_PENDING_OCCURRENCE`);
         return await this.startPendingChain(payload.id);
       case NodeSignal.CHAIN_DEPLOY: {
+        // Logger.event(`handle CHAIN_DEPLOY`);
         return await this.deployChain(payload.config, payload.data);
       }
       default:
-        Logger.warn(
-          `${this.ctn}: Unknown signal received: ${JSON.stringify(payload, null, 2)}`,
-        );
+        // Logger.warn(
+        //   `${this.ctn}: Unknown signal received: ${JSON.stringify(payload, null, 2)}`,
+        // );
     }
+  }
+
+  /**
+   * Reports a notification remotely for a specific chain.
+   * @param {Notification & Partial<NodeStatusMessage>} notification - The notification to report.
+   * @param {string} chainId - The identifier of the chain.
+   */
+  remoteReport(
+    notification: Notification & Partial<NodeStatusMessage>,
+    chainId: string,
+  ) {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.remoteReport`)
+    const monitoring = MonitoringAgent.retrieveService();
+    const reporting = monitoring.genReportingAgent({
+      chainId,
+      nodeId: 'supervisor-remote',
+      index: 1,
+      count: -1,
+    });
+    reporting.notify(notification, 'global-signal');
+  }
+
+  /**
+   * Reports a local status update for a specific chain.
+   * @param {ChainStatus.Type} status - The status to report.
+   * @param {string} chainId - The identifier of the chain.
+   */
+  private localReport(status: ChainStatus.Type, chainId: string) {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.localReport`)
+    const monitoring = MonitoringAgent.retrieveService();
+    const reporting = monitoring.genReportingAgent({
+      chainId,
+      nodeId: 'supervisor',
+      index: -1,
+      count: -1,
+    });
+    reporting.notify({ status }, 'local-signal');
   }
 
   /**
@@ -153,21 +285,34 @@ export class NodeSupervisor {
   private async deployChain(
     config: ChainConfig,
     data: PipelineData,
+    parentChainId?: string,
   ): Promise<string> {
-    if (!config) {
-      throw new Error(`${this.ctn}: Chain configuration is required`);
+    Logger.info(`${process.env.PORT}:NodeSupervisor.deployChain`)
+    try {
+      if (!config) {
+        throw new Error(`${this.ctn}: Chain configuration is required`);
+      }
+      // Logger.info(`${this.ctn}: Starting a new chain deployment...`);
+      const chainId = this.createChain(config);
+      await this.prepareChainDistribution(chainId);
+      const chain = this.chains.get(chainId);
+      if (chain) {
+        chain.dataRef = data;
+      }
+      // Logger.info(
+      //   `${this.ctn}: Deployment for chain ${chainId} has successfully started...`,
+      // );
+      if (parentChainId) {
+        const children = this.childChains.get(parentChainId) || [];
+        children.push(chainId);
+        this.childChains.set(parentChainId, children);
+      }
+      this.localReport(ChainStatus.CHAIN_DEPLOYED, chainId);
+      return chainId;
+    } catch (error) {
+      // Logger.error(`${this.ctn}{deployChain}: ${(error as Error).message}`);
+      throw error;
     }
-    Logger.info(`${this.ctn}: Starting a new chain deployment...`);
-    const chainId = this.createChain(config);
-    await this.prepareChainDistribution(chainId);
-    const chain = this.chains.get(chainId);
-    if (chain) {
-      chain.dataRef = data;
-    }
-    Logger.info(
-      `${this.ctn}: Deployment for chain ${chainId} has successfully started...`,
-    );
-    return chainId;
   }
 
   /**
@@ -176,13 +321,14 @@ export class NodeSupervisor {
    * @returns {Promise<string>} The new node identifier
    */
   private async createNode(config: NodeConfig): Promise<string> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.createNode`)
     const node = new Node();
     const nodeId = node.getId();
     node.setConfig(config);
     this.nodes.set(nodeId, node);
-    Logger.info(
-      `${this.ctn}: Node ${nodeId} created with config: ${JSON.stringify(config, null, 2)}`,
-    );
+    // Logger.info(
+    //   `${this.ctn}: Node ${nodeId} created with config: ${JSON.stringify(config, null, 2)}`,
+    // );
     return nodeId;
   }
 
@@ -196,15 +342,17 @@ export class NodeSupervisor {
     config: NodeConfig,
     initiator: boolean = false,
   ): Promise<string> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setupNode`)
     this.updateChain([config]);
     const nodeId = await this.createNode(config);
     const node = this.nodes.get(nodeId);
 
     if (!node) {
-      Logger.warn(`${this.ctn}: Attempted to setup undefined node`);
+      // Logger.warn(`${this.ctn}: Attempted to setup undefined node`);
       return nodeId;
     }
 
+    // Logger.header(`Setup node ${node?.getId()}...`);
     await this.setRemoteMonitoringHost(config);
 
     const processors = config.services.map(
@@ -214,9 +362,9 @@ export class NodeSupervisor {
         ),
     );
     await this.addProcessors(nodeId, processors);
-    Logger.info(
-      `${this.ctn}: Node ${nodeId} setup completed with ${processors.length} processors`,
-    );
+    // Logger.info(
+    //   `${this.ctn}: Node ${nodeId} setup completed with ${processors.length} processors`,
+    // );
 
     if (config.nextTargetId !== undefined) {
       node.setNextNodeInfo(
@@ -225,10 +373,11 @@ export class NodeSupervisor {
         config.nextMeta,
       );
     } else if (!initiator) {
-      Logger.warn(
-        `${this.ctn}: Cannot set next node info: nextTargetId is undefined`,
-      );
+      // Logger.warn(
+      //   `${this.ctn}: Cannot set next node info: nextTargetId is undefined`,
+      // );
     }
+    //
     this.notify(nodeId, ChainStatus.NODE_SETUP_COMPLETED, 'global-signal');
     return nodeId;
   }
@@ -236,33 +385,35 @@ export class NodeSupervisor {
   /**
    * Handles externals notifications about a chain status change
    * @param {string} chainId - The chain identifier
-   * @param {ChainStatus.Type} status - The new chain status
+   * @param {Notification} notification - The new chain status notification
    */
-  handleNotification(chainId: string, status: ChainStatus.Type): void {
+  handleNotification(chainId: string, notification: Notification): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.handleNotification`)
     try {
       const chain = this.chains.get(chainId);
       if (!chain) {
-        Logger.warn(`${this.ctn}: Chain with ID ${chainId} not found.`);
+        // Logger.warn(`${this.ctn}: Chain with ID ${chainId} not found.`);
         return;
       }
       const rootNodeId = chain.rootNodeId;
       if (!rootNodeId) {
-        Logger.warn(`${this.ctn}: Root node ID missing for chain ${chainId}.`);
+        // Logger.warn(`${this.ctn}: Root node ID missing for chain ${chainId}.`);
         return;
       }
       const node = this.nodes.get(rootNodeId);
       if (!node) {
-        Logger.warn(`${this.ctn}: Node with ID ${rootNodeId} not found.`);
+        // Logger.warn(`${this.ctn}: Node with ID ${rootNodeId} not found.`);
         return;
       }
-      node.notify(status, 'global-signal');
-      Logger.info(
-        `${this.ctn}: Notification sent to node ${rootNodeId} with status ${status}.`,
-      );
+      // Logger.info(
+      //   `${this.ctn}:\n\t\tSending notification to node ${rootNodeId}` +
+      //     `\n\t\twith status ${JSON.stringify(notification)}.`,
+      // );
+      node.notify(notification, 'global-signal');
     } catch (error) {
-      Logger.error(
-        `${this.ctn}: Failed to handle notification for chain ${chainId}: ${(error as Error).message}`,
-      );
+      // Logger.error(
+      //   `${this.ctn}: Failed to handle notification for chain ${chainId}: ${(error as Error).message}`,
+      // );
     }
   }
 
@@ -270,17 +421,19 @@ export class NodeSupervisor {
    * Notifies a node about a chain status change
    * @param {string} nodeId - The node identifier to notify
    * @param {ChainStatus.Type} status - The new chain status to notify
+   * @param {ReportingSignalType} type - The type of reporting signal
    */
   private notify(
     nodeId: string,
     status: ChainStatus.Type,
     type: ReportingSignalType = 'local-signal',
   ): void {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.notify`)
     const node = this.nodes.get(nodeId);
     if (node) {
       node.notify(status, type);
     } else {
-      Logger.warn(`${this.ctn}: Can't notify non-existing node ${nodeId}`);
+      // Logger.warn(`${this.ctn}: Can't notify non-existing node ${nodeId}`);
     }
   }
 
@@ -293,12 +446,13 @@ export class NodeSupervisor {
     nodeId: string,
     processors: PipelineProcessor[],
   ): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.addProcessors`)
     const node = this.nodes.get(nodeId);
     if (node) {
       node.addPipeline(processors);
-      Logger.info(`${this.ctn}: Processors added to Node ${nodeId}.`);
+      // Logger.info(`${this.ctn}: Processors added to Node ${nodeId}.`);
     } else {
-      Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
+      // Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
     }
   }
 
@@ -307,40 +461,12 @@ export class NodeSupervisor {
    * @param {string} nodeId - The node identifier to delete
    */
   private async deleteNode(nodeId: string): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.deleteNode`)
     if (this.nodes.has(nodeId)) {
       this.nodes.delete(nodeId);
-      Logger.info(`${this.ctn}: Node ${nodeId} deleted.`);
+      // Logger.info(`${this.ctn}: Node ${nodeId} deleted.`);
     } else {
-      Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
-    }
-  }
-
-  /**
-   * Pauses a node
-   * @param {string} nodeId - The node identifier to pause
-   */
-  private async pauseNode(nodeId: string): Promise<void> {
-    const node = this.nodes.get(nodeId);
-    if (node) {
-      node.updateStatus(ChainStatus.NODE_PAUSED);
-      Logger.info(`${this.ctn}: Node ${nodeId} paused.`);
-    } else {
-      Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
-    }
-  }
-
-  /**
-   * Delays the execution of a node
-   * @param {string} nodeId - The node identifier
-   * @param {number} delay - The delay in milliseconds
-   */
-  private async delayNode(nodeId: string, delay: number): Promise<void> {
-    const node = this.nodes.get(nodeId);
-    if (node) {
-      node.setDelay(delay);
-      Logger.info(`${this.ctn}: Node ${nodeId} delayed by ${delay} ms.`);
-    } else {
-      Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
+      // Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
     }
   }
 
@@ -350,33 +476,43 @@ export class NodeSupervisor {
    * @returns {string} The new chain identifier
    */
   createChain(config: ChainConfig): string {
-    if (!config || !Array.isArray(config)) {
-      throw new Error('Invalid chain configuration: config must be an array');
+    Logger.info(`${process.env.PORT}:NodeSupervisor.createChain`)
+    try {
+      if (!config || !Array.isArray(config)) {
+        throw new Error('Invalid chain configuration: config must be an array');
+      }
+      const timestamp = Date.now();
+      const chainId = `${this.uid}-${timestamp}-${randomUUID().slice(0, 8)}`;
+      const relation: ChainRelation = {
+        config,
+      };
+
+      this.chains.set(chainId, relation);
+
+      let monitoringHost = config[0].rootConfig
+        ? config[0].rootConfig.monitoringHost
+        : config[0]?.monitoringHost;
+
+      const count = Array.isArray(config) ? config.length : 0;
+
+      if (count > 0) {
+        config.forEach((value: NodeConfig, index: number) => {
+          if (value) {
+            value.index = index;
+            value.count = count;
+            value.monitoringHost = monitoringHost;
+          }
+        });
+      } else {
+        // Logger.warn(`${this.ctn}: Chain configuration is empty`);
+      }
+
+      // Logger.header(`${this.ctn}:\n\tChain ${chainId} creation has started...`);
+      return chainId;
+    } catch (error) {
+      // Logger.header(`${this.ctn}{createChain}:\n\t${(error as Error).message}`);
+      throw error;
     }
-    const timestamp = Date.now();
-    const chainId = `${this.uid}-${timestamp}-${randomUUID().slice(0, 8)}`;
-    const relation: ChainRelation = {
-      config,
-    };
-
-    this.chains.set(chainId, relation);
-    const monitoringHost = config[0]?.monitoringHost;
-    const count = Array.isArray(config) ? config.length : 0;
-
-    if (count > 0) {
-      config.forEach((value: NodeConfig, index: number) => {
-        if (value) {
-          value.index = index;
-          value.count = count;
-          value.monitoringHost = monitoringHost;
-        }
-      });
-    } else {
-      Logger.warn(`${this.ctn}: Chain configuration is empty`);
-    }
-
-    Logger.header(`${this.ctn}: Chain ${chainId} creation has started...`);
-    return chainId;
   }
 
   /**
@@ -385,6 +521,7 @@ export class NodeSupervisor {
    * @returns {string} The chain identifier
    */
   private updateChain(config: ChainConfig): string {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.updateChain`)
     if (config.length === 0 || !config[0].chainId) {
       throw new Error('Invalid chain configuration');
     }
@@ -392,18 +529,19 @@ export class NodeSupervisor {
     let relation = this.chains.get(chainId);
 
     if (relation) {
+      // todo: to be reviewed
       relation.config = relation.config.concat(config);
-      Logger.info(
-        `${this.ctn}: Chain ${chainId} updated with ${config.length} new configurations`,
-      );
+      // Logger.info(
+      //   `${this.ctn}: Chain ${chainId} updated with ${config.length} new configurations`,
+      // );
     } else {
       relation = {
         config: config,
       };
       this.chains.set(chainId, relation);
-      Logger.info(
-        `${this.ctn}: Chain ${chainId} created with ${config.length} configurations`,
-      );
+      // Logger.info(
+      //   `${this.ctn}: Chain ${chainId} created with ${config.length} configurations`,
+      // );
     }
     return chainId;
   }
@@ -413,6 +551,7 @@ export class NodeSupervisor {
    * @param {NodeConfig} config - The node configuration containing the monitoring host
    */
   private async setRemoteMonitoringHost(config: NodeConfig): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.setRemoteMonitoringHost`)
     const remoteMonitoringHost = config.monitoringHost;
     if (!remoteMonitoringHost) {
       throw new Error(
@@ -428,85 +567,111 @@ export class NodeSupervisor {
    * @param {string} chainId - The chain identifier
    */
   async prepareChainDistribution(chainId: string): Promise<void> {
-    Logger.header(
-      `${this.ctn}: Chain distribution for ${chainId} in progress...`,
-    );
-    const chain = this.chains.get(chainId);
-    if (!chain) {
-      throw new Error(`${this.ctn}: Chain ${chainId} not found`);
-    }
-    const chainConfig: ChainConfig = chain.config;
-    const localConfigs: NodeConfig[] = chainConfig.filter(
-      (config) => config.location === 'local',
-    );
-    const remoteConfigs: NodeConfig[] = chainConfig.filter(
-      (config) => config.location === 'remote',
-    );
-
-    if (localConfigs.length > 0) {
-      const rootNodeId = await this.setupNode(
-        { ...localConfigs[0], chainId },
-        true,
+    Logger.info(`${process.env.PORT}:NodeSupervisor.prepareChainDistribution`)
+    try {
+      // Logger.header(
+      //   `${this.ctn}:\n\tChain distribution for ${chainId} in progress...`,
+      // );
+      const chain = this.chains.get(chainId);
+      if (!chain) {
+        throw new Error(`${this.ctn}: Chain ${chainId} not found`);
+      }
+      const chainConfig: ChainConfig = chain.config;
+      const localConfigs: NodeConfig[] = chainConfig.filter(
+        (config) => config.location === 'local',
       );
-      chain.rootNodeId = rootNodeId;
+      const remoteConfigs: NodeConfig[] = chainConfig.filter(
+        (config) => config.location === 'remote',
+      );
 
-      let prevNodeId = rootNodeId;
-      for (let i = 1; i < localConfigs.length; i++) {
-        const currentNodeId = await this.setupNode(
-          {
-            ...localConfigs[i],
-            chainId,
-          },
+      if (!localConfigs) {
+        // Logger.warn('Local config undefined`);
+      }
+
+      if (localConfigs.length > 0) {
+        const rootNodeId = await this.setupNode(
+          { ...localConfigs[0], chainId },
           true,
         );
-        const prevNode = this.nodes.get(prevNodeId);
-        if (prevNode) {
-          prevNode.setNextNodeInfo(currentNodeId, NodeType.LOCAL);
-        }
-        prevNodeId = currentNodeId;
-      }
+        chain.rootNodeId = rootNodeId;
 
-      // Set the last local node to point to the first remote service
-      if (remoteConfigs.length > 0 && remoteConfigs[0].services.length > 0) {
-        const lastLocalNode = this.nodes.get(prevNodeId);
-        if (lastLocalNode) {
-          const nextService = remoteConfigs[0].services[0];
-          lastLocalNode.setNextNodeInfo(
-            typeof nextService === 'string'
-              ? nextService
-              : nextService.targetId,
-            NodeType.REMOTE,
-            typeof nextService === 'string' ? void 0 : nextService.meta,
+        let prevNodeId = rootNodeId;
+        for (let i = 1; i < localConfigs.length; i++) {
+          const currentNodeId = await this.setupNode(
+            {
+              ...localConfigs[i],
+              chainId,
+            },
+            true,
           );
+          const prevNode = this.nodes.get(prevNodeId);
+          if (prevNode) {
+            prevNode.setNextNodeInfo(currentNodeId, NodeType.LOCAL);
+          }
+          prevNodeId = currentNodeId;
         }
-      }
-    } else {
-      Logger.warn(
-        `${this.ctn}: No local config found for chain ${chainId}. Root node unavailable.`,
-      );
-    }
 
-    if (remoteConfigs.length > 0) {
-      const updatedRemoteConfigs: NodeConfig[] = remoteConfigs.map(
-        (config, index) => {
-          const nextConfig: string | ServiceConfig =
-            remoteConfigs[index + 1]?.services[0];
-          const nodeConfig: NodeConfig = {
-            ...config,
-            nextTargetId: nextConfig
-              ? typeof nextConfig === 'string'
-                ? nextConfig
-                : nextConfig.targetId
-              : undefined,
-            nextMeta:
-              nextConfig && typeof nextConfig !== 'string'
-                ? nextConfig.meta
-                : undefined,
-          };
-          return nodeConfig;
-        },
-      );
-      await this.broadcastNodeSetupSignal(chainId, updatedRemoteConfigs);
+        if (!remoteConfigs) {
+          // Logger.warn('Remote config undefined`);
+        }
+
+        // Set the last local node to point to the first remote service
+        if (remoteConfigs.length > 0 && remoteConfigs[0].services.length > 0) {
+          const lastLocalNode = this.nodes.get(prevNodeId);
+          if (lastLocalNode) {
+            const nextService = remoteConfigs[0].services[0];
+            lastLocalNode.setNextNodeInfo(
+              typeof nextService === 'string'
+                ? nextService
+                : nextService.targetId,
+              NodeType.REMOTE,
+              typeof nextService === 'string' ? void 0 : nextService.meta,
+            );
+          }
+        }
+      } else {
+        // Logger.warn(
+        //   `${this.ctn}: No local config found for chain ${chainId}. Root node unavailable.`,
+        // );
+      }
+      try {
+        if (remoteConfigs.length > 0) {
+          const updatedRemoteConfigs: NodeConfig[] = remoteConfigs.map(
+            (config, index) => {
+              const nextConfig: string | ServiceConfig =
+                remoteConfigs[index + 1]?.services[0];
+              const nodeConfig: NodeConfig = {
+                ...config,
+                nextTargetId: nextConfig
+                  ? typeof nextConfig === 'string'
+                    ? nextConfig
+                    : nextConfig.targetId
+                  : undefined,
+                nextNodeResolver: nextConfig
+                  ? typeof nextConfig === 'string'
+                    ? nextConfig
+                    : nextConfig.meta?.resolver
+                  : undefined,
+                nextMeta:
+                  nextConfig && typeof nextConfig !== 'string'
+                    ? nextConfig.meta
+                    : undefined,
+              };
+              return nodeConfig;
+            },
+          );
+          await this.broadcastNodeSetupSignal(chainId, updatedRemoteConfigs);
+        }
+      } catch (error) {
+        // Logger.error(
+        //   `${this.ctn}{prepareChainDistribution, broadcast}: ${(error as Error).message}`,
+        // );
+      }
+    } catch (error) {
+      // Logger.error(
+      //   `${this.ctn}{prepareChainDistribution}: ${(error as Error).message}`,
+      // );
+      throw error;
     }
   }
 
@@ -519,7 +684,8 @@ export class NodeSupervisor {
     chainId: string,
     remoteConfigs: ChainConfig,
   ): Promise<void> {
-    const message: BrodcastSetupMessage = {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.broadcastNodeSetupSignal`)
+    const message: BroadcastSetupMessage = {
       signal: NodeSignal.NODE_SETUP,
       chain: {
         id: chainId,
@@ -529,9 +695,40 @@ export class NodeSupervisor {
 
     try {
       await this.broadcastSetupCallback(message);
+      // Logger.info(
+      //   `${this.ctn}: Node creation signal broadcasted with chainId: ${chainId} for remote configs`,
+      // );
+    } catch (error) {
+      // Logger.error(
+      //   `${this.ctn}: Failed to broadcast node creation signal: ${error}`,
+      // );
+    }
+  }
+
+
+  /**
+   * Broadcasts a deploy signal for sub chain
+   * @param {ChainConfig} remoteConfigs - The remote node configurations
+   * @param data
+   */
+  async broadcastNodePreSignal(
+    remoteConfigs: ChainConfig,
+    data?: PipelineData,
+  ): Promise<Object | undefined> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.broadcastNodePreSignal`)
+    const message: BroadcastPreMessage = {
+      signal: NodeSignal.NODE_PRE,
+      chain: {
+        config: remoteConfigs,
+        data
+      },
+    };
+
+    try {
       Logger.info(
-        `${this.ctn}: Node creation signal broadcasted with chainId: ${chainId} for remote configs`,
+        `${this.ctn}: Node creation signal broadcasted with chainId: ${remoteConfigs[0].chainId} for remote configs`,
       );
+      return await this.broadcastPreCallback(message);
     } catch (error) {
       Logger.error(
         `${this.ctn}: Failed to broadcast node creation signal: ${error}`,
@@ -544,13 +741,60 @@ export class NodeSupervisor {
    * @param {string} chainId - The chain identifier
    */
   async startPendingChain(chainId: string) {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.startPendingChain`)
     const chain = this.chains.get(chainId);
     const data = chain?.dataRef;
+
     if (data) {
-      await this.startChain(chainId, data);
+      const rootConfig = chain?.config[0]?.rootConfig;
+      if (rootConfig) {
+        const rootNodeId = chain?.rootNodeId;
+        if (!rootNodeId) {
+          // Logger.error(
+          //   `${this.ctn}: Root node ID for chain ${chainId} not found.`,
+          // );
+          throw new Error('Root node ID not found');
+        }
+        const chainMode =
+          chain?.config[0]?.rootConfig?.childMode === 'parallel'
+            ? 'parallel'
+            : 'serial';
+
+        if (chainMode === ChildMode.PARALLEL) {
+          // Logger.warn(`// Starting parallel child chain: ${chainId}`);
+          this.notify(
+            rootNodeId,
+            ChainStatus.CHILD_CHAIN_STARTED,
+            'global-signal',
+          );
+
+          this.startChain(chainId, data)
+            .then(() =>
+              this.notify(
+                rootNodeId,
+                ChainStatus.CHILD_CHAIN_COMPLETED,
+                'global-signal',
+              ),
+            )
+            .catch((error) => {
+              // Logger.error(`Failed to start parallel child chain: ${error}`);
+            });
+        } else {
+          // Logger.warn(`__ Starting serial child chain: ${chainId}`);
+          await this.startChain(chainId);
+          this.notify(
+            rootNodeId,
+            ChainStatus.CHILD_CHAIN_COMPLETED,
+            'global-signal',
+          );
+        }
+      } else {
+        await this.startChain(chainId, data);
+      }
     } else {
-      Logger.error(`${this.ctn}: Can't start chain ${chainId}`);
-      throw new Error('Something went wrong while starting pending chain');
+      await this.startChain(chainId);
+      // Logger.warn(`${this.ctn}:\n\tNothing to process on chain ${chainId}`);
+      Logger.info(`${process.env.PORT}:NodeSupervisor.startPendingChain:else`)
     }
   }
 
@@ -559,35 +803,38 @@ export class NodeSupervisor {
    * @param {string} chainId - The chain identifier
    * @param {PipelineData} data - The initial data to process
    */
-  async startChain(chainId: string, data: PipelineData): Promise<void> {
-    Logger.header(`Chain ${chainId} requested...`);
+  async startChain(chainId: string, data?: PipelineData): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.startChain`)
+    // Logger.header(`<<Start Chain>>: Chain ${chainId} requested...`);
+    // Logger.info(`Data: ${JSON.stringify(data, null, 2)}`);
     const chain = this.chains.get(chainId);
+    console.log('CHAIN', chain)
     if (!chain) {
-      Logger.warn(`Chain ${chainId} not found.`);
+      // Logger.warn(`Chain ${chainId} not found.`);
       return;
     }
     const rootNodeId = chain.rootNodeId;
     if (!rootNodeId) {
-      Logger.error(`${this.ctn}: Root node ID for chain ${chainId} not found.`);
+      // Logger.error(`${this.ctn}: Root node ID for chain ${chainId} not found.`);
       return;
     }
 
     const rootNode = this.nodes.get(rootNodeId);
 
     if (!rootNode) {
-      Logger.error(
-        `${this.ctn}: Root node ${rootNodeId} for chain ${chainId} not found.`,
-      );
+      // Logger.error(
+      //   `${this.ctn}: Root node ${rootNodeId} for chain ${chainId} not found.`,
+      // );
       return;
     }
 
     try {
       await this.runNode(rootNodeId, data);
-      Logger.info(
-        `${this.ctn}: Chain ${chainId} started with root node ${rootNodeId}.`,
-      );
+      // Logger.info(
+      //   `${this.ctn}: Chain ${chainId} started with root node ${rootNodeId}.`,
+      // );
     } catch (error) {
-      Logger.error(`${this.ctn}: Failed to start chain ${chainId}: ${error}`);
+      // Logger.error(`${this.ctn}: Failed to start chain ${chainId}: ${error}`);
     }
   }
 
@@ -597,11 +844,12 @@ export class NodeSupervisor {
    * @param {PipelineData} data - The data to process
    */
   private async runNode(nodeId: string, data: PipelineData): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.runNode`)
     const node = this.nodes.get(nodeId);
     if (node) {
       await node.execute(data);
     } else {
-      Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
+      // Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
     }
   }
 
@@ -610,9 +858,10 @@ export class NodeSupervisor {
    * @param {CallbackPayload} payload - The payload containing target ID, chain ID, and data
    */
   async runNodeByRelation(payload: CallbackPayload): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.runNodeByRelation`)
     try {
       const { targetId, chainId, data } = payload;
-      Logger.info(`Received data for node hosting target ${targetId}`);
+      // Logger.info(`Received data for node hosting target ${targetId}`);
       if (chainId === undefined) {
         throw new Error('chainId is undefined');
       }
@@ -637,7 +886,7 @@ export class NodeSupervisor {
         data: data as PipelineData,
       });
     } catch (error) {
-      Logger.error(`Error in runNodeByRelation: ${(error as Error).message}`);
+      // Logger.error(`Error in runNodeByRelation: ${(error as Error).message}`);
     }
   }
 
@@ -646,18 +895,19 @@ export class NodeSupervisor {
    * @param {string} nodeId - The node identifier
    */
   private async sendNodeData(nodeId: string): Promise<void> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.sendNodeData`)
     const node = this.nodes.get(nodeId);
     if (node) {
       try {
         await node.sendData();
       } catch (err) {
         const error = err as Error;
-        Logger.error(
-          `${this.ctn}: Node ${nodeId} send data failed: ${error.message}`,
-        );
+        // Logger.error(
+        //   `${this.ctn}: Node ${nodeId} send data failed: ${error.message}`,
+        // );
       }
     } else {
-      Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
+      // Logger.warn(`${this.ctn}: Node ${nodeId} not found.`);
     }
   }
 
@@ -666,6 +916,7 @@ export class NodeSupervisor {
    * @returns {Map<string, Node>} Map of nodes
    */
   getNodes(): Map<string, Node> {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.getNodes`)
     return this.nodes;
   }
 
@@ -676,6 +927,7 @@ export class NodeSupervisor {
    * @returns {Node[]} Array of nodes matching the criteria
    */
   getNodesByServiceAndChain(serviceUid: string, chainId: string): Node[] {
+    Logger.info(`${process.env.PORT}:NodeSupervisor.getNodesByServiceAndChain`)
     return Array.from(this.nodes.values()).filter((node) => {
       const nodeConfig = node.getConfig();
       if (!nodeConfig) {
