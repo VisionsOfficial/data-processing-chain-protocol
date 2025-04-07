@@ -4,5 +4,5 @@ node_modules
 logs
 src/logs
 .npmrc
-html-doc
 mochawesome-report
+html-doc
