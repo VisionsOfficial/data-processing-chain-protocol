@@ -47,7 +47,7 @@ export abstract class ReportingAgentBase extends Agent {
     type: ReportingSignalType = 'local-signal',
   ): void {
     const { status } = notification;
-    // Logger.info(`Status ${status} from ${this.uid}`);
+    Logger.info(`Status ${status} from ${this.uid}`);
     this.status.push(status);
     this.emit(type, notification);
   }

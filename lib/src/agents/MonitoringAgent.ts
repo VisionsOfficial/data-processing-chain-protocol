@@ -101,7 +101,6 @@ export class MonitoringAgent extends Agent {
   setBroadcastReportingCallback(
     broadcastReportingCallback: ReportingCallback,
   ): void {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:setBroadcastReportingCallback`)
     this.broadcastReportingCallback = broadcastReportingCallback;
   }
 
@@ -111,7 +110,6 @@ export class MonitoringAgent extends Agent {
    * @returns {string|undefined} The remote monitoring host address if exists
    */
   getRemoteMonitoringHost(chainId: string): string | undefined {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:getRemoteMonitoringHost`)
     return this.remoteMonitoringHost.get(chainId);
   }
 
@@ -121,7 +119,6 @@ export class MonitoringAgent extends Agent {
    * @param {string} remoteMonitoringHost - The remote monitoring host address
    */
   setRemoteMonitoringHost(chainId: string, remoteMonitoringHost: string): void {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:setRemoteMonitoringHost`)
     this.remoteMonitoringHost.set(chainId, remoteMonitoringHost);
   }
 
@@ -131,7 +128,6 @@ export class MonitoringAgent extends Agent {
    * @returns {ReportingAgent} A new ReportingAgent instance
    */
   genReportingAgent(payload: ReportingPayload): ReportingAgent {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:genReportingAgent`)
     const { chainId, nodeId, index } = payload;
     ReportingAgent.authorize(this);
     const reporting = new ReportingAgent(chainId, nodeId);
@@ -140,11 +136,11 @@ export class MonitoringAgent extends Agent {
     // entire context. It is called after any global notification
     // todo: add type for signals
     reporting.on('global-signal', async (signal) => {
-      // Logger.event(
-      //   'Receive global-signal:\n' +
-      //     `\t\t\t\t${JSON.stringify(signal)}\n` +
-      //     `\t\t\t\tfor node ${nodeId}\n`,
-      // );
+      Logger.event(
+        'Receive global-signal:\n' +
+          `\t\t\t\t${JSON.stringify(signal)}\n` +
+          `\t\t\t\tfor node ${nodeId}\n`,
+      );
       const message: ReportingMessage = { ...payload, signal };
       if (index > 0) {
         // Report message to distant monitoring host
@@ -158,11 +154,11 @@ export class MonitoringAgent extends Agent {
 
     // handle local signal for a specific node on a specific chain
     reporting.on('local-signal', async (signal) => {
-      // Logger.event(
-      //   'Receive local-signal:\n' +
-      //     `\t\t\t\t${JSON.stringify(signal)}\n` +
-      //     `\t\t\t\tfor node ${nodeId} in chain ${chainId}\n`,
-      // );
+      Logger.event(
+        'Receive local-signal:\n' +
+          `\t\t\t\t${JSON.stringify(signal)}\n` +
+          `\t\t\t\tfor node ${nodeId} in chain ${chainId}\n`,
+      );
       const message: ReportingMessage = { ...payload, signal };
       const update: MonitoringChainStatus = {
         [message.nodeId]: { [message.signal.status]: true },
@@ -188,7 +184,6 @@ export class MonitoringAgent extends Agent {
    * @returns {ChainStatus|undefined} The chain status if exists
    */
   getChainStatus(chainId: string): MonitoringChainStatus | undefined {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:getChainStatus`)
     return this.workflow[chainId]?.status;
   }
 
@@ -198,7 +193,6 @@ export class MonitoringAgent extends Agent {
    * @param {number} count - The setup count to be set
    */
   setChainSetupCount(chainId: string, count: number): void {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:setChainSetupCount`)
     if (!this.workflow[chainId]) {
       this.workflow[chainId] = {};
     }
@@ -211,7 +205,6 @@ export class MonitoringAgent extends Agent {
    * @returns {number|undefined} The setup count if exists
    */
   getChainSetupCount(chainId: string): number | undefined {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:getChainSetupCount`)
     return this.workflow[chainId]?.setupCount;
   }
 
@@ -220,7 +213,6 @@ export class MonitoringAgent extends Agent {
    * @param {string} chainId - The chain identifier
    */
   setChainDeployed(chainId: string): void {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:setChainDeployed`)
     if (!this.workflow[chainId]) {
       this.workflow[chainId] = {};
     }
@@ -233,7 +225,6 @@ export class MonitoringAgent extends Agent {
    * @returns {boolean|undefined} Whether the chain is deployed
    */
   getChainDeployed(chainId: string): boolean | undefined {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:getChainDeployed`)
     return this.workflow[chainId]?.deployed;
   }
 
@@ -242,10 +233,6 @@ export class MonitoringAgent extends Agent {
    * @param {string} chainId - The chain identifier
    */
   setChainSetupCompleted(chainId: string): void {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:setChainSetupCompleted`)
-    Logger.warn(`${process.env.PORT}:========================================================================================`)
-    Logger.warn(`${process.env.PORT}:===========================================setChainSetupCompleted=======================`)
-    Logger.warn(`${process.env.PORT}:========================================================================================`)
     if (!this.workflow[chainId]) {
       this.workflow[chainId] = {};
     }
@@ -258,7 +245,6 @@ export class MonitoringAgent extends Agent {
    * @returns {boolean|undefined} Whether the chain setup is completed
    */
   getChainSetupCompleted(chainId: string): boolean | undefined {
-    Logger.warn(`${process.env.PORT}:ReportingAgent:getChainSetupCompleted`)
     return this.workflow[chainId]?.setupCompleted;
   }
 }

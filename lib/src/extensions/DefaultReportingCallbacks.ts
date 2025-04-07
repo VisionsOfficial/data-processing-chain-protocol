@@ -73,7 +73,6 @@ export namespace Ext {
   const defaultReportSignalHandler = async (
     message: ReportingMessage,
   ): Promise<void> => {
-    Logger.info(`${process.env.PORT}:defaultReportCallback:defaultReportSignalHandler`)
     await ExtDMSH.MonitoringSignalHandler.handle(message);
   };
 
@@ -85,14 +84,13 @@ export namespace Ext {
   export const defaultMonitoringResolver = async (
     chainId: string,
   ): Promise<string | undefined> => {
-    Logger.info(`${process.env.PORT}:defaultReportCallback:defaultMonitoringResolver`)
     try {
       const monitoring = MonitoringAgent.retrieveService();
       const monitoringHost = monitoring.getRemoteMonitoringHost(chainId);
       if (monitoringHost !== undefined) {
-        // Logger.info({
-        //   message: `DRC: Resolving host for monitoring: ${monitoringHost}`,
-        // });
+        Logger.info({
+          message: `DRC: Resolving host for monitoring: ${monitoringHost}`,
+        });
         return monitoringHost;
       } else
         throw new Error(
@@ -111,15 +109,13 @@ export namespace Ext {
   const broadcastReportingCallback = async (
     payload: BRCPayload,
   ): Promise<void> => {
-    Logger.info(`${process.env.PORT}:defaultReportCallback:broadcastReportingCallback`)
     try {
       const { message, path, monitoringResolver } = payload;
       const monitoringHost = await monitoringResolver(message.chainId);
       const url = new URL(path, monitoringHost);
-      Logger.info(`${process.env.PORT}`)
       Logger.debug(url.href)
       const data = JSON.stringify(message);
-      // Logger.info(`BroadcastReportingCallback: Sending message to ${url}`);
+      Logger.info(`BroadcastReportingCallback: Sending message to ${url}`);
       await post(url, data);
     } catch (error) {
       Logger.error({ message: (error as Error).message });
@@ -136,7 +132,6 @@ export namespace Ext {
   export const setMonitoringCallbacks = async (
     dcPayload: DefaultReportingCallbackPayload,
   ): Promise<void> => {
-    Logger.info(`${process.env.PORT}:defaultReportCallback:setMonitoringCallbacks`)
     const { paths, reportSignalHandler, monitoringResolver } = dcPayload;
     const supervisor = NodeSupervisor.retrieveService();
 
@@ -152,9 +147,9 @@ export namespace Ext {
     );
 
     if (reportSignalHandler) {
-      // Logger.info('Monitoring Callback set with custom Signal Handler');
+      Logger.info('Monitoring Callback set with custom Signal Handler');
     } else {
-      // Logger.info('Monitoring Callback set with default Signal Handler');
+      Logger.info('Monitoring Callback set with default Signal Handler');
     }
 
     supervisor.setBroadcastReportingCallback(
@@ -169,9 +164,9 @@ export namespace Ext {
     );
 
     if (monitoringResolver) {
-      // Logger.info('Broadcast Reporting Callback set with custom Resolver');
+      Logger.info('Broadcast Reporting Callback set with custom Resolver');
     } else {
-      // Logger.info('Broadcast Reporting Callback set with default Resolver');
+      Logger.info('Broadcast Reporting Callback set with default Resolver');
     }
   };
 }

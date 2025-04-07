@@ -23,8 +23,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleStopSignal(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleStopSignal`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing STOP signal`);
+    Logger.info(`~ NodeStatusManager: Processing STOP signal`);
   }
 
   /**
@@ -33,8 +32,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleSuspendSignal(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleSuspendSignal`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing Suspend signal`);
+    Logger.info(`~ NodeStatusManager: Processing Suspend signal`);
     if (!this.status.includes(ChainStatus.NODE_SUSPENDED)) {
       this.status.push(ChainStatus.NODE_SUSPENDED);
       Logger.info(`Node ${this.node.getId()} suspended.`);
@@ -47,23 +45,22 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleResumeSignal(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleResumeSignal`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing RESUME signal`);
+    Logger.info(`~ NodeStatusManager: Processing RESUME signal`);
     const index = this.status.indexOf(ChainStatus.NODE_SUSPENDED);
     if (index > -1) {
       this.status.splice(index, 1);
       if (!this.suspendedState) {
-        // Logger.warn(
-        //   `~ NodeStatusManager: Node ${this.node.getId()} may have resumed prematurely.`,
-        // );
+        Logger.warn(
+          `~ NodeStatusManager: Node ${this.node.getId()} may have resumed prematurely.`,
+        );
         return;
       }
-      // Logger.info(`~ NodeStatusManager: Resuming node ${this.node.getId()}...`);
+      Logger.info(`~ NodeStatusManager: Resuming node ${this.node.getId()}...`);
       return this.node.execute(this.suspendedState.data);
     } else {
-      // Logger.warn(
-      //   `~ NodeStatusManager: Cannot resume Node ${this.node.getId()}, not in suspended state.`,
-      // );
+      Logger.warn(
+        `~ NodeStatusManager: Cannot resume Node ${this.node.getId()}, not in suspended state.`,
+      );
     }
   }
 
@@ -79,7 +76,6 @@ export class NodeStatusManager {
     currentBatch: T,
     data: PipelineData,
   ): void {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:suspendExecution`)
     //TODO MONITORING NOTIFY PAUSE
     this.suspendedState = {
       generator,
@@ -93,7 +89,6 @@ export class NodeStatusManager {
    * @returns {SuspendedState | null} The suspended state or null if not suspended.
    */
   getSuspendedState(): SuspendedState | null {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:getSuspendedState`)
     return this.suspendedState;
   }
 
@@ -101,7 +96,6 @@ export class NodeStatusManager {
    * Clears the suspended state by setting it to null.
    */
   clearSuspendedState(): void {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:clearSuspendedState`)
     this.suspendedState = null;
   }
 
@@ -110,7 +104,6 @@ export class NodeStatusManager {
    * @returns {boolean} True if suspended, false otherwise.
    */
   isSuspended(): boolean {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:isSuspended`)
     return this.status.includes(ChainStatus.NODE_SUSPENDED);
   }
 
@@ -120,8 +113,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleErrorSignal(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleErrorSignal`)
-    // Logger.error('~ NodeStatusManager: Processing ERROR signal`);
+    Logger.error(`NodeStatusManager: Processing ERROR signal`);
   }
 
   /**
@@ -130,8 +122,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleNodeSetup(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleNodeSetup`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing NODE_SETUP signal`);
+    Logger.info(`~ NodeStatusManager: Processing NODE_SETUP signal`);
   }
 
   /**
@@ -140,8 +131,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleNodeCreate(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleNodeCreate`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing NODE_CREATE signal`);
+    Logger.info(`~ NodeStatusManager: Processing NODE_CREATE signal`);
   }
 
   /**
@@ -150,8 +140,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleNodeDelete(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleNodeDelete`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing NODE_DELETE signal`);
+    Logger.info(`~ NodeStatusManager: Processing NODE_DELETE signal`);
   }
 
   /**
@@ -160,8 +149,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleNodeRun(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleNodeRun`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing NODE_RUN signal`);
+    Logger.info(`~ NodeStatusManager: Processing NODE_RUN signal`);
   }
 
   /**
@@ -170,8 +158,7 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async handleNodeSendData(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:handleNodeSendData`)
-    // Logger.info(`${process.env.PORT}:NodeStatusManager:~ NodeStatusManager: Processing NODE_SEND_DATA signal`);
+    Logger.info(`~ NodeStatusManager: Processing NODE_SEND_DATA signal`);
   }
 
   /**
@@ -179,7 +166,6 @@ export class NodeStatusManager {
    * @param {NodeSignal.Type[]} newSignals - The new signals to set in the queue.
    */
   public updateQueue(newSignals: NodeSignal.Type[]): void {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:updateQueue`)
     this.signalQueue = newSignals;
     this.currentCursor = 0;
   }
@@ -191,7 +177,6 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   public async enqueueSignals(signals: NodeSignal.Type[], resumePayload?: ResumePayload): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:enqueueSignals`)
     this.signalQueue.push(...signals);
 
     if(resumePayload && this.suspendedState?.data){
@@ -209,10 +194,8 @@ export class NodeStatusManager {
    * @returns {Promise<void>}
    */
   private async processNextSignal(): Promise<void> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:processNextSignal`)
     try {
       const currentSignal = this.signalQueue[this.currentCursor];
-      console.log("CURRENT SIGNAL", currentSignal)
       switch (currentSignal) {
         case NodeSignal.NODE_STOP:
           return this.handleStopSignal();
@@ -233,14 +216,14 @@ export class NodeStatusManager {
         case NodeSignal.NODE_SEND_DATA:
           return this.handleNodeSendData();
         default:
-          // Logger.warn(
-          //   `~ NodeStatusManager: Unknown signal type: ${currentSignal}`,
-          // );
+          Logger.warn(
+            `~ NodeStatusManager: Unknown signal type: ${currentSignal}`,
+          );
       }
     } catch (error) {
-      // Logger.error(
-      //   `~ NodeStatusManager: Error processing signal: ${(error as Error).message}`,
-      // );
+      Logger.error(
+        `~ NodeStatusManager: Error processing signal: ${(error as Error).message}`,
+      );
       throw error;
     }
   }
@@ -250,7 +233,6 @@ export class NodeStatusManager {
    * @returns {{ queue: NodeSignal.Type[]; cursor: number }} The queue and cursor state.
    */
   public getQueueState(): { queue: NodeSignal.Type[]; cursor: number } {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:getQueueState`)
     return {
       queue: [...this.signalQueue],
       cursor: this.currentCursor,
@@ -262,7 +244,6 @@ export class NodeStatusManager {
    * @returns {Promise<ChainStatus.Type[]>} The array of current statuses after processing.
    */
   async process(): Promise<ChainStatus.Type[]> {
-    Logger.info(`${process.env.PORT}:NodeStatusManager:process`)
     //TODO
     for (; this.currentCursor < this.signalQueue.length; this.currentCursor++) {
       await this.processNextSignal();

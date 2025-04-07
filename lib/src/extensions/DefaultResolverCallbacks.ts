@@ -45,9 +45,8 @@ export namespace Ext {
   export const broadcastSetupCallback = async (
     payload: BSCPayload,
   ): Promise<void> => {
-    Logger.info(`${process.env.PORT}:defaultResolverCallback:broadcastSetupCallback`)
     const { message, hostResolver, path } = payload;
-    // Logger.info(`Broadcast message: ${JSON.stringify(message, null, 2)}`);
+    Logger.info(`Broadcast message: ${JSON.stringify(message, null, 2)}`);
     const chainConfigs: ChainConfig = message.chain.config;
     const chainId: string = message.chain.id;
     for (const config of chainConfigs) {
@@ -78,7 +77,6 @@ export namespace Ext {
     payload: BDCPayload,
   ): Promise<Object | undefined> => {
     const { message, hostResolver, path } = payload;
-    Logger.info(`Broadcast message: ${JSON.stringify(message, null, 2)}`);
     const chainConfigs: ChainConfig = message.chain.config;
     for (const config of chainConfigs) {
 
@@ -139,11 +137,10 @@ export namespace Ext {
    * @param {RSCPayload} payload - Contains data to send, host resolution function, and path
    */
   export const remoteServiceCallback = async (payload: RSCPayload) => {
-    Logger.info(`${process.env.PORT}:defaultResolverCallback:remoteServiceCallback`)
     const { cbPayload, hostResolver, path } = payload;
-    // Logger.info(
-    //   `Service callback payload: ${JSON.stringify(payload, null, 2)}`,
-    // );
+    Logger.info(
+      `Service callback payload: ${JSON.stringify(payload, null, 2)}`,
+    );
     try {
       if (!cbPayload.chainId) {
         throw new Error('payload.chainId is undefined');
@@ -157,7 +154,7 @@ export namespace Ext {
       }
 
       const url = new URL(path, nextConnectorUrl);
-      // Logger.info(`Sending data to next connector on: ${url.href}`);
+      Logger.info(`Sending data to next connector on: ${url.href}`);
       const data = JSON.stringify(cbPayload);
       await post(url, data);
     } catch (error) {
@@ -185,7 +182,6 @@ export namespace Ext {
   export const setResolverCallbacks = async (
     dcPayload: DefaultCallbackPayload,
   ): Promise<void> => {
-    Logger.info(`${process.env.PORT}:defaultResolverCallback:setResolverCallbacks`)
     const { paths, hostResolver } = dcPayload;
     const supervisor = NodeSupervisor.retrieveService();
 

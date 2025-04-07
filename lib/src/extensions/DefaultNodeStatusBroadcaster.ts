@@ -28,7 +28,6 @@ export namespace Ext {
   export const defaultHostResolver = async (
     message: any,
   ): Promise<string | undefined> => {
-    Logger.info(`${process.env.PORT}:NodeStatusHandlerCallback:defaultHostResolver`)
     try {
       const hostURI = message.payload?.hostURI;
       if (hostURI) {
@@ -48,13 +47,12 @@ export namespace Ext {
    * @returns {Promise<void>}
    */
   const nodeStatusCallback = async (payload: NSCPayload): Promise<void> => {
-    Logger.info(`${process.env.PORT}:NodeStatusHandlerCallback:nodeStatusCallback`)
     try {
       const { message, path, hostResolver } = payload;
       const host = await hostResolver(message);
       const url = new URL(path, host);
       const data = JSON.stringify(message);
-      // Logger.info(`NodeStatusCallback: Sending message to ${url}`);
+      Logger.info(`NodeStatusCallback: Sending message to ${url}`);
       await post(url, data);
     } catch (error) {
       Logger.error(`${(error as Error).message}`);
@@ -70,7 +68,6 @@ export namespace Ext {
   export const setNodeStatusResolverCallbacks = async (
     dcPayload: DefaultNodeStatusCallbackPayload,
   ): Promise<void> => {
-    Logger.info(`${process.env.PORT}:NodeStatusHandlerCallback:setNodeStatusResolverCallbacks`)
     const { paths, hostResolver } = dcPayload;
     const supervisor = NodeSupervisor.retrieveService();
 

@@ -23,14 +23,13 @@ export namespace Ext {
      * @returns {Promise<void>}
      */
     private static async triggerPendingOccurrence(chainId: string) {
-      Logger.info(`${process.env.PORT}:MonitoringSignalHandler:triggerPendingOccurrence`)
       const supervisor = NodeSupervisor.retrieveService();
       const payload: SupervisorPayloadStartPendingChain = {
         signal: NodeSignal.CHAIN_START_PENDING_OCCURRENCE,
         id: chainId,
       };
       await supervisor.handleRequest(payload);
-      // Logger.event(`MonitoringSignalHandler: Start Pending Occurrence...`);
+      Logger.event(`MonitoringSignalHandler: Start Pending Occurrence...`);
     }
 
     /**
@@ -49,10 +48,8 @@ export namespace Ext {
      * @returns {Promise<void>} - Resolves when the message is fully processed.
      */
     static async handle(message: ReportingMessage) {
-      Logger.info(`${process.env.PORT}:MonitoringSignalHandler:handle`)
       const monitoring = MonitoringAgent.retrieveService();
       const status = message.signal?.status;
-      Logger.info(`${process.env.PORT}:MonitoringSignalHandler:handle:${status}`)
       const chainId = message.chainId;
       switch (status) {
         /*
@@ -68,9 +65,9 @@ export namespace Ext {
           count = monitoring.getChainSetupCount(chainId);
           if (count && count >= message.count) {
             monitoring.setChainSetupCompleted(chainId);
-            // Logger.event(
-            //   `MonitoringSignalHandler: Chain Nodes setup completed`,
-            // );
+            Logger.event(
+              `MonitoringSignalHandler: Chain Nodes setup completed`,
+            );
             let chainDeployed = monitoring.getChainDeployed(chainId);
             if (chainDeployed) {
               await this.triggerPendingOccurrence(chainId);
@@ -83,7 +80,7 @@ export namespace Ext {
          */
         case ChainStatus.CHAIN_DEPLOYED: {
           monitoring.setChainDeployed(chainId);
-          // Logger.event(`MonitoringSignalHandler: Chain deployed`);
+          Logger.event(`MonitoringSignalHandler: Chain deployed`);
           const chainSetupCompleted =
             monitoring.getChainSetupCompleted(chainId);
           if (chainSetupCompleted) {
@@ -111,9 +108,9 @@ export namespace Ext {
          *
          */
         default:
-          // Logger.event(
-          //   `MonitoringSignalHandler:\n\t\tSignal handler not found for ${JSON.stringify(message.signal)}`,
-          // );
+          Logger.event(
+            `MonitoringSignalHandler:\n\t\tSignal handler not found for ${JSON.stringify(message.signal)}`,
+          );
           break;
       }
     }

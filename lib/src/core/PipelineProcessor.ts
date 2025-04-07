@@ -59,7 +59,6 @@ export class PipelineProcessor {
       Logger.info(
         `[PipelineProcessor]: Digesting data using "${this.targetId}"`,
       );
-      console.log("config", config)
       return await PipelineProcessor.callbackService({
         nextTargetId: config?.nextTargetId,
         nextNodeResolver: config?.nextNodeResolver,

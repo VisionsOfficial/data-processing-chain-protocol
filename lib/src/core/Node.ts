@@ -73,7 +73,6 @@ export class Node {
    * @private
    */
   private updateProgress(): void {
-    Logger.info(`${process.env.PORT}:Node:updateProgress`)
     this.progress += 1 / this.pipelines.length;
   }
 
@@ -82,7 +81,6 @@ export class Node {
    * @param {NodeConfig} config - Configuration containing services, chainId, index and other options
    */
   setConfig(config: NodeConfig): void {
-    Logger.info(`${process.env.PORT}:Node:setConfig`)
     const { chainId, index, count } = config || {};
     if (index !== undefined && count !== undefined) {
       const monitoring = MonitoringAgent.retrieveService();
@@ -93,18 +91,17 @@ export class Node {
         count,
       });
     } else {
-      // Logger.warn('Node index is not defined, configuration failed');
+      Logger.warn('Node index is not defined, configuration failed');
     }
     this.config = config;
     if (config.signalQueue) {
-      // Logger.info(`Node ${this.id} enqueuing signals...`);
-      // Logger.debug(`${config.signalQueue}`);
+      Logger.info(`Node ${this.id} enqueuing signals...`);
+      Logger.debug(`${config.signalQueue}`);
       void this.statusManager.enqueueSignals(config.signalQueue);
     }
   }
 
   async enqueueSignals(statusQueue: NodeSignal.Type[], resumePayload?: ResumePayload): Promise<void> {
-    Logger.info(`${process.env.PORT}:Node:enqueueSignals`)
     await this.statusManager.enqueueSignals(statusQueue, resumePayload);
   }
 
@@ -113,7 +110,6 @@ export class Node {
    * @returns {Promise<void>} Current execution queue
    */
   getExecutionQueue(): Promise<void> {
-    Logger.info(`${process.env.PORT}:Node:getExecutionQueue`)
     return this.executionQueue;
   }
 
@@ -122,7 +118,6 @@ export class Node {
    * @returns {NodeConfig | null} Node configuration if set
    */
   getConfig(): NodeConfig | null {
-    Logger.info(`${process.env.PORT}:Node:getConfig`)
     return this.config;
   }
 
@@ -131,7 +126,6 @@ export class Node {
    * @returns {string} UUID of the node
    */
   getId(): string {
-    Logger.info(`${process.env.PORT}:Node:getId`)
     return this.id;
   }
 
@@ -140,7 +134,6 @@ export class Node {
    * @param {ProcessorPipeline} pipeline - Array of PipelineProcessor instances
    */
   addPipeline(pipeline: ProcessorPipeline): void {
-    Logger.info(`${process.env.PORT}:Node:addPipeline`)
     this.pipelines.push(pipeline);
   }
 
@@ -155,7 +148,6 @@ export class Node {
     pipeline: ProcessorPipeline,
     data: PipelineData,
   ): Promise<PipelineData> {
-    Logger.info(`${process.env.PORT}:Node:processPipeline ${JSON.stringify(data, null, 2)}`)
     let result = data;
     for (const processor of pipeline) {
       result = await processor.digest(result, this.getConfig());
@@ -174,7 +166,6 @@ export class Node {
     pipelines: ProcessorPipeline[],
     count: number,
   ): Generator<ProcessorPipeline[], void, unknown> {
-    Logger.info(`${process.env.PORT}:Node:getPipelineGenerator`)
     for (let i = 0; i < pipelines.length; i += count) {
       yield pipelines.slice(i, i + count);
     }
@@ -189,7 +180,6 @@ export class Node {
     notification: ChainStatus.Type | Notification,
     type: ReportingSignalType = 'local-signal',
   ): void {
-    Logger.info(`${process.env.PORT}:Node:notify`)
     try {
       if (this.reporting !== null) {
         if (typeof notification === 'object' && 'status' in notification) {
@@ -212,7 +202,6 @@ export class Node {
    * @private
    */
   private async processChildChain(data?: PipelineData): Promise<void> {
-    Logger.info(`${process.env.PORT}:Node:processChildChain`)
     this.subConfig = this.config?.chainConfig;
 
     if (this.subConfig && Array.isArray(this.subConfig) && this.subConfig.length > 0) {
@@ -244,16 +233,11 @@ export class Node {
    * @private
    */
   private async processPreChain(data?: PipelineData): Promise<Object | undefined> {
-    Logger.info(`${process.env.PORT}:Node:processPreChain`)
-    Logger.info(`${process.env.PORT}:Node:processPreChain:${JSON.stringify(this?.config?.pre)}`);
-
     if (this.config && this.config.pre && Array.isArray(this.config.pre) && this.config.pre.length > 0) {
-      Logger.info(`${process.env.PORT}:Node:processPreChain:oui`)
       //Split the config
       const supervisor = NodeSupervisor.retrieveService();
 
       if(this.config.pre){
-        Logger.info(`${process.env.PORT}:Node:processPreChain:oui2`)
         for(const preConfig of this.config.pre) {
           if (preConfig.length > 0) {
             const updatedRemoteConfigs: NodeConfig[] = preConfig.map(
@@ -264,8 +248,6 @@ export class Node {
                 if(!nextConfig){
                   nextConfig = this.config?.services[0]
                 }
-
-                console.log("nextConfig", nextConfig)
 
                 const nodeConfig: NodeConfig & {targetId: string | undefined} = {
                   ...config,
@@ -306,7 +288,6 @@ export class Node {
    * @returns {Promise<void>}
    */
   async execute(data: any): Promise<void> {
-    Logger.info(`${process.env.PORT}:Node:execute`)
     const childMode =
       this.config?.rootConfig?.childMode === 'parallel'
         ? 'in parallel'
@@ -321,13 +302,11 @@ export class Node {
     //define execution queue logic
     this.executionQueue = this.executionQueue.then(async () => {
       try {
-        Logger.info(`${process.env.PORT}:Node:execute:${JSON.stringify(this?.config?.pre)}`);
         //execute pre config
         // at each node at execution the node will configure the subchain
         if (this.config && this.config.pre && this.config?.pre?.length > 0) {
-          // Logger.info(`child chain found in node: ${this.id}`);
+          Logger.info(`child chain found in node: ${this.id}`);
           const preData: any = await this.processPreChain(data);
-          console.log("PREDATA", typeof preData)
           //TODO use function that generate this information from the chainconfig
           if(data.additionalData && data.additionalData.length > 0) {
             data.additionalData.push(preData);
@@ -352,7 +331,6 @@ export class Node {
 
           while (!nextResult.done) {
 
-            Logger.info(`BEFORE CALLING PROCESS BATCH`);
             await this.processBatch(nextResult.value, processingData);
             nextResult = generator.next();
 
@@ -408,7 +386,6 @@ export class Node {
     pipelineBatch: ProcessorPipeline[],
     data: PipelineData,
   ): Promise<void> {
-    Logger.info(`${process.env.PORT}:Node:processBatch`)
     return new Promise<void>((resolve, reject) => {
       setImmediate(async () => {
         try {
@@ -434,10 +411,9 @@ export class Node {
    * @returns {Promise<void>}
    */
   async sendData(): Promise<void> {
-    Logger.info(`${process.env.PORT}:Node:sendData`)
     // make sure the queue has finished
     await this.executionQueue;
-    // Logger.info(`Sending data from node ${this.id}.`);
+    Logger.info(`Sending data from node ${this.id}.`);
     // await Node.terminate(this.id, this.output);
   }
 
@@ -449,8 +425,7 @@ export class Node {
    * @static
    */
   private static async terminate(nodeId: string, pipelineData: PipelineData[]) {
-    Logger.info(`${process.env.PORT}:Node:terminate`)
-    // Logger.special(`Terminate: Node ${nodeId} execution completed.`);
+    Logger.special(`Terminate: Node ${nodeId} execution completed.`);
     const data = pipelineData[0];
     await Node.moveToNextNode(nodeId, data);
   }
@@ -467,13 +442,12 @@ export class Node {
     nodeId: string,
     pipelineData: PipelineData,
   ) {
-    Logger.info(`${process.env.PORT}:Node:moveToNextNode`)
     const supervisor = NodeSupervisor.retrieveService();
     const nodes = supervisor.getNodes();
     const currentNode = nodes.get(nodeId);
     const chainId = currentNode?.getConfig()?.chainId;
     if (!currentNode) {
-      // Logger.warn(`Node ${nodeId} not found for moving to next node.`);
+      Logger.warn(`Node ${nodeId} not found for moving to next node.`);
       return;
     }
     const nextNodeInfo = currentNode.getNextNodeInfo();
@@ -494,9 +468,9 @@ export class Node {
         });
       }
     } else {
-      // Logger.special(
-      //   `End of pipeline reached by node ${nodeId} in chain ${chainId}.`,
-      // );
+      Logger.special(
+        `End of pipeline reached by node ${nodeId} in chain ${chainId}.`,
+      );
       currentNode.notify(ChainStatus.NODE_END_OF_PIPELINE, 'global-signal');
     }
     const isPersistant =
@@ -513,55 +487,8 @@ export class Node {
         currentNode.notify(ChainStatus.NODE_PENDING_DELETION, 'global-signal');
       }
     } else {
-      // Logger.warn(`Node ${nodeId} kept for future calls.`);
+      Logger.warn(`Node ${nodeId} kept for future calls.`);
     }
-  }
-
-  private async executePreChain(data: PipelineData){
-    Logger.error(`${process.env.PORT}:Node:executePreChain`);
-    const supervisor = NodeSupervisor.retrieveService();
-    
-    //Pause current node
-    this.updateStatus(ChainStatus.NODE_SUSPENDED);
-    let generator = this.getPipelineGenerator(this.pipelines, 3);
-
-    let nextResult = generator.next();
-    
-    this.statusManager.suspendExecution(
-      generator,
-      nextResult.value,
-      data,
-    );
-    //launch sub chain
-    if(this.subPreConfig.length > 0){
-      for (const subPreConfig of this.subPreConfig) {
-        Logger.error(`${process.env.PORT}:Node:executePreChain:${JSON.stringify(subPreConfig, null, 2)}`);
-        // supervisor.remoteServiceCallback({
-        //   // targetId and meta are related to the next remote target service uid
-        //   chainId: subPreConfig.chainId,
-        //   targetId: subPreConfig.chainConfig[0].services[0],
-        //   data: pipelineData,
-        //   meta: nextNodeInfo.meta,
-        // });
-      }
-    }
-  }
-
-  private async executePostChain(){
-    Logger.debug(`${process.env.PORT}:Node:processPostChain`);
-    //Pause current node
-    this.updateStatus(ChainStatus.NODE_SUSPENDED);
-    let generator = this.getPipelineGenerator(this.pipelines, 3);
-    let processingData = {};
-
-    let nextResult = generator.next();
-
-    this.statusManager.suspendExecution(
-      generator,
-      nextResult.value,
-      processingData,
-    );
-    //launch sub chain
   }
 
   /**
@@ -594,7 +521,6 @@ export class Node {
    * @returns {ChainStatus.Type} Current chain status
    */
   getStatus(): ChainStatus.Type {
-    Logger.info(`${process.env.PORT}:Node:getStatus`)
     return this.status;
   }
 
@@ -603,7 +529,6 @@ export class Node {
    * @returns {string[]} Array of dependency node IDs
    */
   getDependencies(): string[] {
-    Logger.info(`${process.env.PORT}:Node:getDependencies`)
     return this.dependencies;
   }
 
@@ -613,7 +538,6 @@ export class Node {
    * @param {Error} [error] - Optional error if status is NODE_FAILED
    */
   updateStatus(status: ChainStatus.Type, error?: Error): void {
-    Logger.info(`${process.env.PORT}:Node:updateStatus`)
     this.status = status;
     if (status === ChainStatus.NODE_FAILED) {
       this.error = error;
@@ -628,7 +552,6 @@ export class Node {
    * @returns {Error|undefined} Error object if failed
    */
   getError(): Error | undefined {
-    Logger.info(`${process.env.PORT}:Node:getError`)
     return this.error;
   }
 
@@ -647,7 +570,6 @@ export class Node {
    * @param {PipelineMeta} [meta] - Optional pipeline metadata for next node
    */
   setNextNodeInfo(id: string, type: NodeType.Type, meta?: PipelineMeta): void {
-    Logger.info(`${process.env.PORT}:Node:setNextNodeInfo`)
     this.nextNodeInfo = { id, type, meta };
   }
 
@@ -660,7 +582,6 @@ export class Node {
     type: NodeType.Type;
     meta?: PipelineMeta;
   } | null {
-    Logger.info(`${process.env.PORT}:Node:getNextNodeInfo`)
     return this.nextNodeInfo;
   }
 }
