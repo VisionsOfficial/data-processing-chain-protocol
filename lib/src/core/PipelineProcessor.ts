@@ -1,6 +1,8 @@
 import {
+  NodeConfig,
   PipelineData,
   PipelineMeta,
+  preProcessorCallback,
   ProcessorCallback,
   ServiceConfig,
 } from 'types/types';
@@ -12,6 +14,8 @@ import { Logger } from '../utils/Logger';
 export class PipelineProcessor {
   /** Static callback service used by all processor instances */
   static callbackService: ProcessorCallback;
+  /** Static callback service used by all processor instances */
+  static preProcessorCallback: preProcessorCallback;
 
   /** Optional metadata associated with this processor */
   private meta?: PipelineMeta;
@@ -37,16 +41,33 @@ export class PipelineProcessor {
   }
 
   /**
+   * Sets the static callback service used by all processor instances
+   * @param {ProcessorCallback} preCallbackService - The callback function to process data
+   */
+  static setPreCallbackService(preCallbackService: ProcessorCallback): void {
+    PipelineProcessor.preProcessorCallback = preCallbackService;
+  }
+
+  /**
    * Processes input data through the callback service
    * @param {PipelineData} data - Data to be processed
+   * @param config
    * @returns {Promise<PipelineData>} Processed data
    */
-  async digest(data: PipelineData): Promise<PipelineData> {
+  async digest(data: PipelineData, config?: NodeConfig | null): Promise<PipelineData> {
     if (PipelineProcessor.callbackService) {
       Logger.info(
         `[PipelineProcessor]: Digesting data using "${this.targetId}"`,
       );
       return await PipelineProcessor.callbackService({
+        nextTargetId: config?.nextTargetId,
+        nextNodeResolver: config?.nextNodeResolver,
+        previousTargetId: config?.pre && config?.pre[0][0]?.services[0]
+          ? typeof config?.pre[0][0].services[0] === 'string'
+            ? config?.pre[0][0].services[0]
+            : config?.pre[0][0].services[0].targetId
+          : undefined,
+        chainId: config?.chainId,
         targetId: this.targetId,
         meta: this.meta,
         data,
