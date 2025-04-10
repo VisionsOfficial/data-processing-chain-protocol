@@ -6,6 +6,7 @@ interface SuspendedState {
   generator: Generator<any, void, unknown>;
   currentBatch: any;
   data: PipelineData;
+  previousNodeParams?: PipelineData | undefined;
 }
 
 export class NodeStatusManager {
@@ -180,7 +181,11 @@ export class NodeStatusManager {
     this.signalQueue.push(...signals);
 
     if(resumePayload && this.suspendedState?.data){
-      this.suspendedState.data = resumePayload;
+      this.suspendedState.data = resumePayload.data;
+    }
+
+    if(resumePayload?.params && this.suspendedState){
+      this.suspendedState.previousNodeParams = resumePayload.params;
     }
 
     if (signals.length > 0 && signals[0] === NodeSignal.NODE_RESUME) {
