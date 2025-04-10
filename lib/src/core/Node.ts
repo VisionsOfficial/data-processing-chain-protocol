@@ -351,7 +351,7 @@ export class Node {
           }
         } else {
           this.output = []
-          this.output.push(data);
+          this.output.push({ data: suspendedState.data, previousNodeParams: suspendedState.previousNodeParams });
         }
 
         this.statusManager.clearSuspendedState();

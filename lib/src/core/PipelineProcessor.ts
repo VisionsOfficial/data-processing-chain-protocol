@@ -24,36 +24,36 @@ export class PipelineProcessor {
   private targetId: string;
 
   /**
-   * Creates a new PipelineProcessor instance
-   * @param {ServiceConfig} config - Configuration containing targetId and optional metadata
-   */
+     * Creates a new PipelineProcessor instance
+     * @param {ServiceConfig} config - Configuration containing targetId and optional metadata
+     */
   constructor(config: ServiceConfig) {
     this.targetId = config.targetId;
     this.meta = config.meta;
   }
 
   /**
-   * Sets the static callback service used by all processor instances
-   * @param {ProcessorCallback} callbackService - The callback function to process data
-   */
+     * Sets the static callback service used by all processor instances
+     * @param {ProcessorCallback} callbackService - The callback function to process data
+     */
   static setCallbackService(callbackService: ProcessorCallback): void {
     PipelineProcessor.callbackService = callbackService;
   }
 
   /**
-   * Sets the static callback service used by all processor instances
-   * @param {ProcessorCallback} preCallbackService - The callback function to process data
-   */
+     * Sets the static callback service used by all processor instances
+     * @param {ProcessorCallback} preCallbackService - The callback function to process data
+     */
   static setPreCallbackService(preCallbackService: ProcessorCallback): void {
     PipelineProcessor.preProcessorCallback = preCallbackService;
   }
 
   /**
-   * Processes input data through the callback service
-   * @param {PipelineData} data - Data to be processed
-   * @param config
-   * @returns {Promise<PipelineData>} Processed data
-   */
+     * Processes input data through the callback service
+     * @param {PipelineData} data - Data to be processed
+     * @param config
+     * @returns {Promise<PipelineData>} Processed data
+     */
   async digest(data: PipelineData, config?: NodeConfig | null): Promise<PipelineData> {
     if (PipelineProcessor.callbackService) {
       Logger.info(
@@ -62,7 +62,7 @@ export class PipelineProcessor {
       return await PipelineProcessor.callbackService({
         nextTargetId: config?.nextTargetId,
         nextNodeResolver: config?.nextNodeResolver,
-        previousTargetId: config?.pre && config?.pre[0][0]?.services[0]
+        previousTargetId: config?.pre && config?.pre.length > 0 && config?.pre[0] && config?.pre[0].length > 0 && config?.pre[0][0] && config?.pre[0][0]?.services[0]
           ? typeof config?.pre[0][0].services[0] === 'string'
             ? config?.pre[0][0].services[0]
             : config?.pre[0][0].services[0].targetId

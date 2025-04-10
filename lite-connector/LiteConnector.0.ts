@@ -290,7 +290,7 @@ export class LiteConnector {
           },
           path: '/chain/create-and-start',
         };
-        await Ext.Resolver.broadcastDeployCallback(payload);
+        await Ext.Resolver.broadcastPreCallback(payload);
       },
     );
 
